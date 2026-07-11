@@ -1,64 +1,262 @@
 # AI 知识付费直播复盘
 
-面向 AI 课程、训练营和陪跑类直播间的 Web 端复盘工具。用户提交直播链接或录屏后，系统生成带时间点逐字稿，定位违禁词与语义风险，对照知识付费直播框架检查节奏，并给出主播可以直接使用的整改话术。
+[![CI](https://github.com/1killermouse/ai-livestream-review/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/1killermouse/ai-livestream-review/actions/workflows/ci.yml)
+![Node.js](https://img.shields.io/badge/Node.js-22%2B-339933?logo=nodedotjs&logoColor=white)
+![TypeScript](https://img.shields.io/badge/TypeScript-5.9-3178C6?logo=typescript&logoColor=white)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
-这是一个 AI 产品经理作品集项目，目标不是做通用内容审核平台，而是在“AI 知识付费直播”这个垂直场景里跑通从录制、识别、检索、分析到整改的完整闭环。
+面向 AI 课程、训练营和陪跑类直播间的 Web 端复盘工具。用户提交直播链接或录屏后，系统生成带时间点逐字稿，定位违禁词与上下文语义风险，对照知识付费直播框架检查节奏，并给出主播可以直接使用的整改话术。
 
-## 核心能力
+这是一个 AI 产品经理作品集项目。目标不是做通用内容审核平台，而是在“AI 知识付费直播”这个垂直场景里，跑通从录制、转写、检索、分析到整改和追问的完整闭环。
 
-- 直播链接录制：调用 [DouyinLiveRecorder](https://github.com/ihmily/DouyinLiveRecorder)，主播下播后手动开始复盘。
-- 录屏直接上传：浏览器上传常见音视频文件，文件通过 OSS 提供给 ASR。
-- 长任务处理：录屏分析在后端异步执行，页面轮询任务状态，避免长视频转写被单次 HTTP 超时打断。
-- 带时间点转写：阿里百炼 `paraformer-v2` 输出句子级开始与结束时间。
-- RAG 检索：`text-embedding-v4` 向量化内置框架、风险规则和案例边界，Embedding 不可用时回退到关键词检索。
-- Agent 工作流：LangGraph 编排转写整理、框架检索、风险判断和整改建议四个节点。
-- 双层风险判断：确定性违禁词扫描 + DeepSeek 上下文语义风险判断。
-- 框架节奏分析：按原话出现时间、文字量和语义证据判断直播阶段是否覆盖。
-- 可执行结果：展示原话、风险原因、推荐说法、下一场行动清单和复盘改稿。
-- 报告追问：围绕本场逐字稿、风险点和时间轴继续追问。
-- 飞书沉淀：配置飞书应用后创建复盘文档；未配置时展示文档预览。
-- 数据复盘演示：用明确标注的模拟数据演示在线、互动和话术时间轴的对照，真实第三方数据接口尚未接入。
+![复盘报告总览](docs/images/report-overview.png)
 
-## 用户流程
+## 项目解决什么问题
+
+知识付费主播复盘一场长直播时，通常要反复拖动录屏、手工找风险话术，再凭经验判断节奏。这个过程有三个明显问题：
+
+1. **找不到具体位置**：只知道“这场讲得不好”，不知道是哪一分钟、哪一句话出了问题。
+2. **合规和转化割裂**：违禁词工具只做字符串匹配，无法判断收益暗示、案例夸大和过度逼单等上下文风险。
+3. **报告不能执行**：很多分析只给结论，没有主播下一场可以直接照着说的替换话术。
+
+本项目将输出统一到一份带时间轴的行动报告中：
+
+- 哪句话存在风险，以及对应录屏时间点。
+- 为什么有风险，是违禁词、语义风险还是框架缺口。
+- 当前直播节奏覆盖了哪些阶段，哪些阶段尚未到达或需要加强。
+- 下一场应该保留什么、删掉什么、具体怎么改。
+- 主播可以继续追问本场直播，回答仍然引用原话和时间点。
+
+## 快速体验
+
+只体验产品界面和完整示例时，不需要配置云服务密钥：
+
+```bash
+git clone https://github.com/1killermouse/ai-livestream-review.git
+cd ai-livestream-review
+npm install
+cp .env.example .env.local
+npm run dev:local
+```
+
+打开：
+
+```text
+http://localhost:8081/app/app_179b24s0sng/
+```
+
+点击“先看完整示例”即可查看完整报告。该入口使用内置时间戳逐字稿和确定性演示结果，不消耗 ASR、Embedding 或 DeepSeek 额度。
+
+<details>
+<summary>查看提交直播界面</summary>
+
+![提交直播界面](docs/images/review-entry.png)
+
+</details>
+
+## 产品闭环
 
 ```mermaid
 flowchart LR
   A[直播链接] --> B[DouyinLiveRecorder]
   B --> C[本地录屏]
-  D[上传录屏] --> E[OSS]
-  C -->|主播下播后手动开始| E
-  E --> N[创建后台分析任务]
-  N --> F[阿里 ASR 带时间点转写]
-  F --> G[RAG 检索直播框架与风险规则]
-  G --> H[LangGraph 风险与节奏分析]
-  H --> I[整改报告]
-  I --> J[复盘改稿]
-  I --> K[报告追问]
-  I --> L[飞书文档]
-  I --> M[示例数据复盘]
+  D[上传录屏] --> E[阿里 OSS]
+  C -->|主播下播后手动分析| E
+  E --> F[创建后台分析任务]
+  F --> G[阿里 ASR 带时间点转写]
+  G --> H[RAG 检索框架与风险依据]
+  H --> I[LangGraph 风险与节奏分析]
+  I --> J[整改报告]
+  J --> K[复盘改稿]
+  J --> L[报告追问]
+  J --> M[飞书文档]
+  J --> N[示例数据复盘]
 ```
 
-## 技术架构
+### 用户操作路径
 
-| 层级     | 实现                                                   |
-| -------- | ------------------------------------------------------ |
-| Web      | React 19、Vite、Tailwind CSS、Radix UI、Recharts       |
-| API      | NestJS、TypeScript                                     |
-| 长任务   | 进程内分析任务 + 前端状态轮询                          |
-| 工作流   | LangChain、LangGraph                                   |
-| ASR      | 阿里百炼 `paraformer-v2`                               |
-| RAG      | 阿里 `text-embedding-v4` + 进程内向量索引 + 关键词兜底 |
-| 语义分析 | DeepSeek Chat Completions                              |
-| 文件中转 | 阿里 OSS 签名 URL                                      |
-| 直播录制 | DouyinLiveRecorder 外部进程                            |
-| 协作输出 | 飞书云文档 API                                         |
+1. 进入页面，选择“直播正在进行”或“我已有录屏”。
+2. 直播链接模式启动录制，主播下播后手动开始复盘；录屏模式直接上传文件。
+3. 选择内置 AI 知识付费框架，或输入本场要使用的自定义框架文本。
+4. 页面持续展示分析进度，后端完成 ASR、RAG、风险判断和整改生成。
+5. 查看总览、风险整改、节奏时间轴、数据复盘、复盘改稿和报告追问六个结果页签。
+6. 复制改稿，或将报告同步到飞书继续协作。
 
-## 本地运行
+## 能力状态
 
-### 1. 环境要求
+| 能力                 | 状态   | 当前实现                                           |
+| -------------------- | ------ | -------------------------------------------------- |
+| 抖音直播链接录制     | 已接入 | 封装 DouyinLiveRecorder 外部进程，轮询录制状态     |
+| 本地录屏上传         | 已接入 | 浏览器上传音视频，单文件上限 500 MB                |
+| 文件中转             | 已接入 | 阿里 OSS 上传与签名 URL                            |
+| 带时间点 ASR         | 已接入 | 阿里百炼 `paraformer-v2`，保留句子开始和结束时间   |
+| RAG                  | 已接入 | `text-embedding-v4` + 进程内向量索引 + 关键词兜底  |
+| 违禁词判断           | 已接入 | 本地确定性规则，当前词库为 MVP 样例                |
+| 语义风险判断         | 已接入 | DeepSeek 结合逐字稿、框架和 RAG 依据输出结构化风险 |
+| 直播节奏判断         | 已接入 | ASR 时间戳为主，文字量和语义证据为辅               |
+| 自定义分析框架       | 已接入 | 支持单场输入框架文本，暂未做文档持久化             |
+| 后台长任务           | 已接入 | 进程内任务状态 + 前端每 2 秒轮询                   |
+| 报告追问             | 已接入 | DeepSeek 只围绕本场报告回答，并返回参考时间点      |
+| 飞书同步             | 已接入 | 配置飞书应用后创建文档；未配置时明确显示预览       |
+| 第三方直播数据       | 演示   | 使用明确标注的模拟数据，预留真实数据适配器         |
+| 画面与贴片识别       | 未接入 | 当前只分析音频转写文本                             |
+| 登录、历史报告、计费 | 未接入 | 当前定位为个人项目与单机 MVP                       |
+
+## 报告包含什么
+
+### 1. 总览
+
+- 话术安全分和风险等级。
+- 高风险原话、节奏缺口、可替换改法数量。
+- 本场关键结论和下一场行动清单。
+
+### 2. 风险整改
+
+- 原话和发生时间。
+- 风险类型、风险等级和命中规则。
+- 风险原因、修改建议和可直接替换的话术。
+
+### 3. 节奏时间轴
+
+- 每个框架阶段的建议时间窗口。
+- `已覆盖 / 需要加强 / 缺失 / 暂不判断` 四种状态。
+- 带开始时间、结束时间、字数和风险标签的逐字稿时间轴。
+
+### 4. 数据复盘
+
+- 在线、互动、点击和成交线索的示例曲线。
+- 数据变化与风险话术时间点对齐。
+- 当前为产品演示数据，不冒充蝉妈妈、考古加等真实数据源。
+
+### 5. 复盘改稿
+
+- 主播下一场可以直接复制的整段复盘话术。
+- 飞书文档标题、关键结论、整改清单和时间轴预览。
+
+### 6. 报告追问
+
+- 支持追问“最该先改哪三处”“课程承接哪里最弱”等具体问题。
+- 回答引用本场逐字稿、风险点、框架结果和对应时间点。
+- 报告没有依据时明确说明，不编造直播内容。
+
+## 关键产品判断
+
+### 为什么不只用文字量判断直播节奏
+
+文字量只能粗略反映内容密度，不能准确代表时长。主播语速、停顿、互动和等待下单都会造成明显偏差。因此本项目采用：
+
+1. **ASR 时间戳作为主依据**：直接使用每句话的真实开始和结束时间。
+2. **文字量作为辅助指标**：判断同一时间段内的信息密度，而不是反推绝对时长。
+3. **语义证据判断阶段**：确认主播是在讲干货、课程权益、案例，还是成交承接。
+4. **短录屏不强判缺失**：尚未进入 60 分钟、84 分钟或 90 分钟窗口时，返回“暂不判断”。
+
+### 为什么没有堆很多 Agent
+
+LangGraph 中保留四个职责清晰的节点，但并不是四个节点都调用大模型：
+
+| 节点           | 职责                                           | 主要实现            |
+| -------------- | ---------------------------------------------- | ------------------- |
+| 转写整理 Agent | 清洗 ASR 结果，保留时间戳、字数和阶段标签      | 确定性代码          |
+| 框架检索 Agent | 对齐直播框架并召回风险规则、案例边界和改写依据 | RAG + 规则          |
+| 风险判断 Agent | 合并违禁词规则与上下文语义风险                 | 本地规则 + DeepSeek |
+| 整改建议 Agent | 输出风险原因、修改动作和主播可直接说的话术     | 结构化工作流        |
+
+这样既能在面试中展示 Agent 编排，也能控制开发成本、模型费用和调试复杂度。
+
+### 为什么示例报告不调用外部模型
+
+示例入口的目标是让第一次访问者稳定理解产品，而不是消耗 API 额度。真实录屏走完整云服务链路，示例报告使用内置数据。两者在界面和 README 中明确区分，避免把模拟结果包装成真实分析。
+
+## AI 与 Agent 架构
+
+```mermaid
+flowchart TD
+  A[ASR 时间戳逐字稿] --> B[转写整理 Agent]
+  B --> C[框架检索 Agent]
+  K1[直播框架] --> C
+  K2[风险规则] --> C
+  K3[案例边界] --> C
+  C --> D[风险判断 Agent]
+  R[确定性违禁词规则] --> D
+  L[DeepSeek 语义判断] --> D
+  D --> E[整改建议 Agent]
+  E --> F[结构化复盘报告]
+  F --> G[报告追问]
+  F --> H[飞书同步]
+```
+
+### 风险判断策略
+
+风险结果不是完全交给大模型自由生成，而是采用双层判断：
+
+1. 本地正则和规则先识别保证收益、极限词、虚假稀缺、站外交易等确定性风险。
+2. RAG 召回与当前话术最相关的框架、规则和案例边界。
+3. DeepSeek 根据逐字稿、框架匹配和 RAG 依据返回 JSON 风险对象。
+4. 服务端过滤非法类型和低质量字段，再与本地规则去重合并。
+5. DeepSeek 不可用时保留本地规则结果，核心流程不会完全中断。
+
+## RAG 设计
+
+当前知识库聚焦 AI 知识付费直播，内置三类文档：
+
+- `framework`：0-60 分钟干货、60-84 分钟课程权益、84-90 分钟案例人设、90 分钟后成交承接。
+- `risk_rule`：收益承诺、案例夸大、AI 工具能力夸大、过度逼单和站外交易等规则。
+- `case_sample`：宝妈副业、实体店转型自媒体等案例边界。
+
+共享协议已预留 `rewrite_template` 类型，当前替换话术来自确定性风险规则和 DeepSeek 结构化结果，尚未把改写模板作为独立 RAG 文档入库。
+
+检索流程：
+
+```mermaid
+flowchart LR
+  A[逐字稿 + 风险原话] --> B[text-embedding-v4]
+  C[内置知识文档] --> D[进程内向量索引]
+  B --> E[余弦相似度 Top K]
+  D --> E
+  E --> F[框架匹配与 DeepSeek Prompt]
+  B -. Embedding 失败 .-> G[关键词检索兜底]
+  G --> F
+```
+
+MVP 语料规模很小，因此暂未增加 Rerank，也没有为了技术名词额外引入独立服务。后续知识库扩大后，再迁移到持久化向量数据库并评估 Rerank 的收益。
+
+## 长任务设计
+
+长录屏的 ASR 和模型分析可能超过普通 HTTP 请求时限，因此真实录屏采用后台任务：
+
+1. 前端上传文件并创建分析任务。
+2. 后端立即返回任务 ID，在后台继续执行 ASR、RAG 和 DeepSeek。
+3. 前端每 2 秒查询一次任务状态，最长等待 10 分钟。
+4. 任务完成后返回完整报告；失败时返回可理解的错误信息。
+
+当前任务保存在进程内，最多保留 20 个；创建新任务时会清理超过 24 小时的旧任务。该实现适合单机 MVP；生产环境应替换为 Redis、BullMQ 或云任务队列。
+
+## 技术栈
+
+| 层级      | 实现                                                |
+| --------- | --------------------------------------------------- |
+| Web       | React 19、Vite、Tailwind CSS、Radix UI、Recharts    |
+| API       | NestJS、TypeScript                                  |
+| 工作流    | LangChain、LangGraph                                |
+| ASR       | 阿里百炼 `paraformer-v2`                            |
+| Embedding | 阿里 `text-embedding-v4`，默认 1024 维              |
+| 语义分析  | DeepSeek Chat Completions                           |
+| 文件中转  | 阿里 OSS 签名 URL                                   |
+| 直播录制  | DouyinLiveRecorder 外部进程                         |
+| 协作输出  | 飞书云文档 API                                      |
+| 测试与 CI | Jest、ESLint、Stylelint、TypeScript、GitHub Actions |
+
+## 本地开发
+
+### 环境要求
+
+基础示例：
 
 - Node.js 22+
 - npm 10+
+
+真实录屏分析：
+
 - Python 3.10+
 - FFmpeg
 - 阿里百炼 API Key
@@ -66,16 +264,16 @@ flowchart LR
 - DeepSeek API Key
 - 可选：飞书开放平台应用
 
-### 2. 安装项目
+### 安装依赖
 
 ```bash
 npm install
 cp .env.example .env.local
 ```
 
-只在 `.env.local` 中填写真实密钥。仓库会忽略所有本地环境文件，只保留空值示例。
+`dev:local` 检测不到 `lark-cli` 时会跳过妙搭环境拉取，继续使用本地 `.env.local`。真实密钥只应写入 `.env.local`，不要提交到仓库。
 
-### 3. 安装直播录制工具
+### 配置直播录制工具
 
 ```bash
 git clone https://github.com/ihmily/DouyinLiveRecorder.git tools/DouyinLiveRecorder
@@ -83,94 +281,169 @@ python3 -m venv tools/DouyinLiveRecorder/.venv
 tools/DouyinLiveRecorder/.venv/bin/python -m pip install -r tools/DouyinLiveRecorder/requirements.txt
 ```
 
-然后在 `.env.local` 中配置：
+在 `.env.local` 中配置：
 
 ```bash
 DOUYIN_LIVE_RECORDER_PATH=./tools/DouyinLiveRecorder
 DOUYIN_LIVE_RECORDER_PYTHON=./tools/DouyinLiveRecorder/.venv/bin/python
 ```
 
-外部录制工具目录不会提交到本仓库。详细说明见 [docs/live-recorder-setup.md](docs/live-recorder-setup.md)。
+外部录制工具目录已加入 `.gitignore`，不会复制到本仓库。详细说明见 [直播录制接入文档](docs/live-recorder-setup.md)。
 
-### 4. 配置云服务
+### 环境变量
 
-参考 [.env.example](.env.example) 填写：
+| 变量                           | 是否必需     | 用途                               |
+| ------------------------------ | ------------ | ---------------------------------- |
+| `ALIYUN_DASHSCOPE_API_KEY`     | 真实分析必需 | ASR 与 Embedding                   |
+| `ALIYUN_ASR_MODEL`             | 可选         | 默认 `paraformer-v2`               |
+| `ALIYUN_OSS_ACCESS_KEY_ID`     | 真实分析必需 | OSS 上传                           |
+| `ALIYUN_OSS_ACCESS_KEY_SECRET` | 真实分析必需 | OSS 上传                           |
+| `ALIYUN_OSS_BUCKET`            | 真实分析必需 | OSS Bucket                         |
+| `ALIYUN_OSS_REGION`            | 真实分析必需 | OSS Region                         |
+| `ALIYUN_OSS_ENDPOINT`          | 真实分析必需 | OSS Endpoint                       |
+| `ALIYUN_EMBEDDING_MODEL`       | 可选         | 默认 `text-embedding-v4`           |
+| `ALIYUN_EMBEDDING_DIMENSIONS`  | 可选         | 默认 1024                          |
+| `DEEPSEEK_API_KEY`             | 建议         | 上下文语义风险与报告追问           |
+| `DEEPSEEK_MODEL`               | 可选         | DeepSeek 模型名                    |
+| `DOUYIN_LIVE_RECORDER_PATH`    | 链接录制必需 | 外部录制工具目录                   |
+| `DOUYIN_LIVE_RECORDER_PYTHON`  | 链接录制必需 | 录制工具 Python 路径               |
+| `FEISHU_APP_ID`                | 飞书同步必需 | 飞书应用 ID                        |
+| `FEISHU_APP_SECRET`            | 飞书同步必需 | 飞书应用密钥                       |
+| `FEISHU_DOC_FOLDER_TOKEN`      | 可选         | 指定飞书文档目录                   |
+| `LOG_REQUEST_BODY`             | 可选         | 默认 `false`，避免日志记录业务内容 |
+| `LOG_RESPONSE_BODY`            | 可选         | 默认 `false`，避免日志记录报告全文 |
+
+完整空值模板见 [.env.example](.env.example)，ASR 与 OSS 配置见 [阿里云接入文档](docs/aliyun-asr-setup.md)。
+
+### 启动与构建
 
 ```bash
-ALIYUN_DASHSCOPE_API_KEY=
-ALIYUN_OSS_ACCESS_KEY_ID=
-ALIYUN_OSS_ACCESS_KEY_SECRET=
-ALIYUN_OSS_BUCKET=
-ALIYUN_OSS_REGION=
-ALIYUN_OSS_ENDPOINT=
-DEEPSEEK_API_KEY=
-```
-
-ASR 与 OSS 说明见 [docs/aliyun-asr-setup.md](docs/aliyun-asr-setup.md)。
-
-### 5. 启动
-
-```bash
+# 本地开发
 npm run dev:local
+
+# 代码规范、类型检查和单元测试
+npm run check
+
+# 生产构建
+npm run build:prod
 ```
 
-默认访问地址：
+## 关键 API
+
+| Method | Endpoint                               | 用途                                   |
+| ------ | -------------------------------------- | -------------------------------------- |
+| `GET`  | `/api/analysis/capability`             | 查询 ASR、Embedding、DeepSeek 配置状态 |
+| `POST` | `/api/analysis/prototype`              | 生成确定性完整示例报告                 |
+| `POST` | `/api/analysis/jobs`                   | 创建真实录屏后台分析任务               |
+| `GET`  | `/api/analysis/jobs/:id`               | 查询后台分析状态和结果                 |
+| `POST` | `/api/analysis/chat`                   | 围绕本场报告继续追问                   |
+| `POST` | `/api/storage/upload-recording`        | 上传浏览器选择的录屏到 OSS             |
+| `POST` | `/api/storage/upload-local-file`       | 上传本项目录制目录中的音视频           |
+| `POST` | `/api/recorder/capture`                | 启动直播链接录制                       |
+| `GET`  | `/api/recorder/capture/:id`            | 查询直播录制状态                       |
+| `POST` | `/api/analytics/mock-live-data-replay` | 生成明确标注的示例数据复盘             |
+| `POST` | `/api/feishu/sync-report`              | 创建飞书文档或返回预览                 |
+
+开发环境还提供 OpenAPI：
 
 ```text
-http://localhost:8081/app/app_179b24s0sng/
+http://localhost:8081/app/app_179b24s0sng/dev/openapi.json
 ```
 
-首次体验可以直接点击页面右上角的“先看完整示例”。该入口使用内置时间戳样例和确定性演示报告，不消耗外部模型额度；上传真实录屏时才会调用 OSS、ASR、Embedding 与 DeepSeek 链路。
+## 项目结构
 
-## 质量检查
+```text
+client/src/api/                       前端 API 封装
+client/src/pages/dashboard/           提交直播与复盘工作台
+server/modules/recorder/              直播录制任务封装
+server/modules/storage/               OSS 上传与本地文件安全边界
+server/modules/analysis/              ASR、RAG、LangGraph、DeepSeek 与后台任务
+server/modules/analytics/             示例第三方数据复盘
+server/modules/feishu/                飞书文档生成与预览
+server/database/                      MVP 数据结构与迁移
+shared/api.interface.ts               前后端共享协议
+docs/                                 云服务、录制工具和开发上下文
+.github/workflows/ci.yml              GitHub Actions 质量门禁
+```
+
+## 测试与质量门禁
+
+当前自动化覆盖：
+
+- 分析后台任务能从 `processing` 正常进入 `completed` 并返回时间戳报告。
+- 模拟数据不能冒充真实第三方数据源。
+- 本地文件上传不能越过录制目录边界。
+- 录制器拒绝非 HTTP(S) URL 和带账号密码的 URL。
+
+本地验收命令：
 
 ```bash
 npm run check
 npm run build:prod
 ```
 
-GitHub Actions 会在 push 和 pull request 时自动执行代码规范检查、类型检查、单元测试和生产构建。
+GitHub Actions 会在 push 和 pull request 时执行 ESLint、Stylelint、前后端 TypeScript 检查、Jest 和生产构建。
 
-## 目录结构
+## 数据真实性与口径
 
-```text
-client/src/pages/dashboard/      用户入口与复盘工作台
-server/modules/recorder/         直播录制任务封装
-server/modules/storage/          OSS 上传与本地文件边界
-server/modules/analysis/         ASR、RAG、LangGraph、DeepSeek 分析
-server/modules/analytics/        示例第三方数据复盘接口
-server/modules/feishu/           飞书文档生成与预览
-shared/api.interface.ts          前后端共享协议
-docs/                            云服务和录制工具接入说明
-```
-
-## 数据真实性
-
-- 录屏上传、OSS、阿里 ASR、Embedding、DeepSeek 分析均为真实接口链路。
-- “完整示例”使用内置逐字稿和演示结果，保证未配置密钥时也能稳定体验完整报告界面。
-- “直播数据复盘”当前是产品演示数据，页面和接口都会明确标注为“示例第三方数据”。
-- 飞书未配置时只生成预览，不会声称已经创建真实文档。
-
-## 当前边界
-
-- 一次只运行一个直播录制任务，录制任务状态保存在进程内。
-- 录屏分析任务同样保存在进程内，适合个人项目与单机演示；服务重启会丢失进行中的任务，生产环境应替换为 Redis/BullMQ 等持久化任务队列。
-- 内置违禁词仍是 MVP 样例，需要持续补充正式规则库。
-- 向量索引当前保存在进程内，服务重启后重新生成；尚未接入 Chroma、Milvus 等持久化向量数据库。
-- 暂不分析直播画面、字幕贴片和商品信息，只分析音频转写文本。
-- 暂不提供多租户登录、历史报告管理、计费和平台级录制稳定性保障。
-- 真实第三方直播数据需要后续实现数据源适配器或 CSV 导入。
+- 录屏上传、OSS、阿里 ASR、Embedding 和 DeepSeek 均有真实接口实现。
+- “完整示例”使用内置逐字稿和演示结果，保证未配置密钥时也能稳定体验。
+- “直播数据复盘”当前是模拟数据，页面和接口均标注“示例第三方数据”。
+- 飞书未配置时只生成文档预览，不声称已经创建真实文档。
+- 话术安全分是本项目的启发式评分，不代表抖音官方审核结论。
+- 风险提示和整改建议只用于内容复盘，不构成法律或平台合规保证。
 
 ## 安全说明
 
-- 不要提交 `.env.local`、录屏、日志或 OSS 签名 URL。
-- 后端只允许把 `.local/recorder-runs` 中由本项目生成的音视频上传到 OSS。
-- 浏览器上传的临时文件在 OSS 上传完成后会立即删除。
-- 只分析自己有权处理的直播内容，并遵守平台规则与相关法律。
+- `.env`、`.env.local`、日志、录屏、临时文件和外部录制工具均已忽略。
+- 后端只允许上传 `.local/recorder-runs` 中由本项目生成的音视频，阻止任意本地文件读取。
+- 浏览器上传的临时文件在 OSS 上传完成后立即删除。
+- 录制链接只接受 HTTP(S)，拒绝嵌入账号密码和异常换行的 URL。
+- 当前没有认证和限流，不应直接作为公网生产服务部署。
+- 只处理自己有权录制和分析的直播内容，并遵守平台规则与相关法律。
+
+漏洞报告方式见 [SECURITY.md](SECURITY.md)。提交代码前请阅读 [CONTRIBUTING.md](CONTRIBUTING.md)。
+
+## 当前边界
+
+- 一次只运行一个直播录制任务。
+- 录制任务、分析任务和向量索引都保存在进程内，服务重启后不会恢复。
+- 内置违禁词和行业规则仍是 MVP 样例，需要继续版本化维护。
+- 自定义框架只在本次分析中使用，尚未提供文件解析、持久化和版本管理。
+- 暂不分析直播画面、字幕贴片、商品信息和评论区内容。
+- 暂不提供登录、多租户、历史报告、计费、限流和平台级录制稳定性保障。
+- 第三方直播数据尚未真实接入。
+- 平台依赖仍有上游传递的依赖审计告警，生产化前需要随平台版本继续升级。
 
 ## 后续路线
 
-1. 导入可版本化的正式违禁词与行业规则库。
-2. 接入持久化向量数据库，并支持用户上传框架文档。
-3. 增加 CSV/第三方数据适配器，把真实在线与成交数据对齐到时间轴。
-4. 保存历史报告，增加认证、限流、持久化任务队列和失败重试。
+1. 导入可版本化的正式违禁词和 AI 知识付费行业规则库。
+2. 支持 Word、PDF、Markdown 框架文档解析、切块和版本管理。
+3. 将进程内向量索引迁移到持久化向量数据库，并在语料扩大后评估 Rerank。
+4. 增加 CSV 和第三方数据适配器，把真实在线、互动、点击与成交数据对齐到话术时间轴。
+5. 保存历史报告，增加登录、权限、限流、持久化任务队列和失败重试。
+6. 增加视频关键帧、字幕贴片和商品展示的多模态分析。
+
+## 面试讲解建议
+
+可以用下面五句话介绍这个项目：
+
+1. 我没有做通用审核，而是选择 AI 知识付费直播，先把垂直场景闭环跑通。
+2. 产品输入是直播链接或录屏，输出不是一个分数，而是带时间点原话、风险原因和可直接照读的改稿。
+3. 节奏判断以 ASR 时间戳为主，文字量和语义为辅，避免把语速误当成直播时长。
+4. Agent 只拆成四个可调试节点，RAG 提供业务依据，DeepSeek 负责需要上下文的语义判断，本地规则负责确定性风险和降级。
+5. 我明确区分真实接口、演示数据和未接入能力，并为长 ASR 任务设计了后台任务与轮询机制。
+
+更完整的产品和开发背景见 [MVP 开发上下文](docs/mvp-development-context.md)。
+
+## 开源与声明
+
+本项目使用 [MIT License](LICENSE)。
+
+- 直播录制能力通过外部方式调用 [ihmily/DouyinLiveRecorder](https://github.com/ihmily/DouyinLiveRecorder)，该项目使用 MIT License，本仓库不复制其源码。
+- “抖音”及相关平台名称归其权利人所有，本项目与抖音官方无隶属或背书关系。
+- 阿里云、DeepSeek、飞书等服务需要使用者自行注册、配置并承担相应费用和合规责任。
+
+## 参与贡献
+
+欢迎提交 Issue 或 Pull Request。请不要在 Issue、截图、日志或提交记录中包含 API Key、AccessKey、直播签名 URL 或未经授权的直播内容。
