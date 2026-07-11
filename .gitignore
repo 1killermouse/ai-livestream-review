@@ -9,7 +9,9 @@ build/
 */build/
 
 # Environment files
-.env.local
+.env
+.env.*
+!.env.example
 
 # Logs
 npm-debug.log*
@@ -62,3 +64,10 @@ pnpm-lock.yaml
 
 # Agent files
 .agent/
+.npm_cache
+
+# External recorder checkout
+tools/DouyinLiveRecorder/
+
+# Local runtime artifacts
+.local/

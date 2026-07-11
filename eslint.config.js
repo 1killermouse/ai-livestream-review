@@ -2,13 +2,20 @@ const tseslint = require('typescript-eslint');
 const { eslintPresetsOfSimple } = require('@lark-apaas/fullstack-presets');
 
 module.exports = tseslint.config(
-  { ignores: ['dist', 'dist-server', 'node_modules', 'client/src/api/gen', '**/*.d.ts', '**/*.js.map'] },
+  {
+    ignores: [
+      'dist',
+      'dist-server',
+      'node_modules',
+      'client/src/api/gen',
+      '**/*.d.ts',
+      '**/*.js.map',
+    ],
+  },
   // Client configuration
   {
     files: ['client/**/*.{ts,tsx}', 'shared/**/*.{ts,tsx}'],
-    extends: [
-      ...eslintPresetsOfSimple.client,
-    ],
+    extends: [...eslintPresetsOfSimple.client],
     languageOptions: {
       parserOptions: {
         project: './tsconfig.app.json',
@@ -27,24 +34,32 @@ module.exports = tseslint.config(
       },
     },
   },
+  // This project uses a standalone Web shell instead of the platform AppContainer.
+  {
+    files: ['client/src/app.tsx', 'client/src/index.tsx'],
+    rules: {
+      '@lark-apaas/require-app-container': 'off',
+    },
+  },
   // Server configuration
   {
     files: ['server/**/*.{ts,tsx}', 'shared/**/*.{ts,tsx}'],
-    extends: [
-      ...eslintPresetsOfSimple.server,
-    ],
+    extends: [...eslintPresetsOfSimple.server],
     languageOptions: {
       parserOptions: {
-        project: './tsconfig.node.json',
-      }
+        project: './tsconfig.eslint.json',
+      },
     },
     settings: {
       'import/resolver': {
         alias: {
-          map: [['@server', './server'], ['@shared', './shared']],
+          map: [
+            ['@server', './server'],
+            ['@shared', './shared'],
+          ],
           extensions: ['.js', '.jsx', '.ts', '.tsx'],
         },
-      }
-    }
+      },
+    },
   },
 );

@@ -3,6 +3,13 @@ import { Module } from '@nestjs/common';
 import { PlatformModule } from '@lark-apaas/fullstack-nestjs-core';
 
 import { GlobalExceptionFilter } from './common/filters/exception.filter';
+import { AccessModule } from './modules/access/access.module';
+import { AnalysisModule } from './modules/analysis/analysis.module';
+import { AnalyticsModule } from './modules/analytics/analytics.module';
+import { FeishuModule } from './modules/feishu/feishu.module';
+import { RecorderModule } from './modules/recorder/recorder.module';
+import { StorageModule } from './modules/storage/storage.module';
+import { WorkspaceModule } from './modules/workspace/workspace.module';
 import { ViewModule } from './modules/view/view.module';
 
 @Module({
@@ -10,7 +17,13 @@ import { ViewModule } from './modules/view/view.module';
     // 平台 Module，提供平台能力
     PlatformModule.forRoot(),
     // ====== @route-section: business-modules START ======
-    // Place all business modules here.Do NOT add fallback modules here.
+    AccessModule,
+    AnalysisModule,
+    AnalyticsModule,
+    FeishuModule,
+    RecorderModule,
+    StorageModule,
+    WorkspaceModule,
     // ====== @route-section: business-modules END ======
 
     // ⚠️ @route-order: last

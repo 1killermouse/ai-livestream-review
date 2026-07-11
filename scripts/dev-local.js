@@ -8,7 +8,9 @@
 //   2. action-plugin init —— 装 user app 在 package.json.actionPlugins 里声明的插件
 //   3. skills sync —— 同步当前 stack 的 agent skills
 //   4. dotenv 加载 .env / .env.local 到 process.env（含 SUDA_WEBUSER 适配）
-//   5. 并发起 dev:server + dev:client（子进程继承 process.env）
+//   5. concurrently 并发起 dev:server + dev:client,整体 stdout/stderr tee 到
+//      logs/dev.std.log;server / client 输出靠 concurrently 自带 [server]/[client]
+//      前缀区分,`grep '\[server\]' logs/dev.std.log` 拿单边日志
 //
 // 关键设计：本脚本在 spawn 子进程之前先把 .env / .env.local 加载到 process.env，
 // 然后 spawn 的 server / client 进程通过 env 继承直接拿到——SDK（fullstack-nestjs-core
@@ -33,6 +35,10 @@ function warn(msg) {
 
 if (!process.env.MIAODA_APP_TYPE) process.env.MIAODA_APP_TYPE = '3';
 process.env.MIAODA_LOCAL_DEV = '1';
+
+// 先建 logs/,防止任何步骤(尤其是 spawn 子进程前的 shell redirect)因父目录不存在挂掉
+const LOG_DIR = process.env.LOG_DIR || 'logs';
+fs.mkdirSync(LOG_DIR, { recursive: true });
 
 // 1. env pull
 console.log('[dev-local] (1/5) env pull...');
@@ -98,8 +104,12 @@ if (process.env.SUDA_WEBUSER) {
   }
 }
 
-// 5. 并发起前后端 dev server
+// 5. 并发起前后端 dev server,整体 tee 到 logs/dev.std.log
+const devLogPath = path.join(LOG_DIR, 'dev.std.log');
 console.log('[dev-local] (5/5) 并发起 dev:server + dev:client');
+console.log(`[dev-local] 日志: ${devLogPath}`);
+
+const logFd = fs.openSync(devLogPath, 'a');
 const child = spawn(
   'npx',
   [
@@ -113,10 +123,49 @@ const child = spawn(
     'npm run dev:server',
     'npm run dev:client',
   ],
-  { stdio: 'inherit', env: process.env },
+  { stdio: ['ignore', 'pipe', 'pipe'], env: process.env },
 );
-child.on('exit', (code) => process.exit(code ?? 0));
+
+const tee = (src) =>
+  src.on('data', (chunk) => {
+    try {
+      process.stdout.write(chunk);
+    } catch {
+      /* terminal gone */
+    }
+    try {
+      fs.writeSync(logFd, chunk);
+    } catch {
+      /* log fd closed */
+    }
+  });
+tee(child.stdout);
+tee(child.stderr);
+
+// 外部 SIGTERM/SIGHUP 转发给 concurrently,避免本进程死了 server/client 变孤儿
+// (SIGINT 在 TTY 下 shell 直接发给整个前台进程组,不需要转发)
+const forward = (sig) => () => {
+  try {
+    child.kill(sig);
+  } catch {
+    /* already gone */
+  }
+};
+process.on('SIGTERM', forward('SIGTERM'));
+process.on('SIGHUP', forward('SIGHUP'));
+
+// 'close' 而非 'exit':等 child 的 stdio stream drain 完才触发,
+// 保证 tee 把最后一批 chunk 写进 logFd 再关闭,不丢尾。
+child.on('close', (code) => {
+  try {
+    fs.closeSync(logFd);
+  } catch {
+    /* already closed */
+  }
+  process.exit(code ?? 0);
+});
 child.on('error', (err) => {
-  console.error(err);
+  console.error('[dev-local] 启动失败:', err.message);
+  console.error('[dev-local] 如缺 concurrently,运行: npm install');
   process.exit(1);
 });

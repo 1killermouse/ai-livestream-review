@@ -3,7 +3,7 @@ hidden = [".config", ".git", "scripts", "node_modules", "dist", ".spark", ".agen
 lint = ["npm", "run", "lint"]
 test = ["npm", "run", "test"]
 genDbSchema = ["npm", "run", "gen:db-schema"]
-genOpenApiClient = ["echo", "'SKIP GEN API CLIENT, WRITE CODE BY YOURSELF'"]
+genOpenApiClient = ["npm", "run", "gen:openapi"]
 
 [deployment]
 build = ["npm", "run", "build"]
@@ -11,6 +11,6 @@ run = ["npm", "run", "start"]
 
 [files]
 [files.restrict]
-pathPatterns = ["client/src/api/gen", "package.json", ".spark_project"]
+pathPatterns = ["client/src/api/gen", "package.json", ".spark_project", ".gitignore"]
 [files.hidden]
 pathPatterns = [".config", ".git", "scripts", "node_modules", "dist", ".spark", ".agent", ".agents", ".claude", "tmp", ".spark_project", ".playwright-cli"]

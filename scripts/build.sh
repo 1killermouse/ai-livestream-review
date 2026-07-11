@@ -3,7 +3,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(pwd)"
-OUT_DIR="$ROOT_DIR/dist/server"
+DIST_DIR="$ROOT_DIR/dist"
 
 # 记录总开始时间
 TOTAL_START=$(node -e "console.log(Date.now())")
@@ -19,89 +19,169 @@ print_time() {
 }
 
 # ==================== 步骤 0 ====================
-echo "🗑️  [0/5] 安装插件"
+echo "🗑️  [0/6] 安装插件"
 STEP_START=$(node -e "console.log(Date.now())")
 npx fullstack-cli action-plugin init
 print_time $STEP_START
 echo ""
 
 # ==================== 步骤 1 ====================
-echo "📝 [1/5] 更新 openapi 代码"
+echo "📝 [1/6] 更新 openapi 代码"
 STEP_START=$(node -e "console.log(Date.now())")
 npm run gen:openapi
 print_time $STEP_START
 echo ""
 
 # ==================== 步骤 2 ====================
-echo "🗑️  [2/5] 清理 dist 目录"
+echo "🗑️  [2/6] 清理 dist 目录"
 STEP_START=$(node -e "console.log(Date.now())")
 rm -rf "$ROOT_DIR/dist"
 print_time $STEP_START
 echo ""
 
 # ==================== 步骤 3 ====================
-echo "🔨 [3/5] 并行构建 server 和 client"
+echo "🗺️  [3/6] 生成路由定义"
 STEP_START=$(node -e "console.log(Date.now())")
 
-# 并行构建
-echo "   ├─ 启动 server 构建..."
-npm run build:server > /tmp/build-server.log 2>&1 &
-SERVER_PID=$!
+# 在 client/server 构建之前生成到 dist/，供 DefinePlugin 注入前端 bundle
+# 注意：nest-cli.json 中 deleteOutDir 必须为 false（模板默认值），否则 nest build 会清掉 dist/
+echo "   ├─ 生成 API 路由定义..."
+npx generate-api-routes --server-dir ./server --out-dir ./dist > /tmp/gen-api-routes.log 2>&1 &
+API_ROUTES_PID=$!
 
-echo "   ├─ 启动 client 构建..."
-npm run build:client > /tmp/build-client.log 2>&1 &
-CLIENT_PID=$!
+echo "   ├─ 生成页面路由定义..."
+npx generate-page-routes --app-path ./client/src/app.tsx --out-dir ./dist > /tmp/gen-page-routes.log 2>&1 &
+PAGE_ROUTES_PID=$!
 
-# 等待两个构建完成
-SERVER_EXIT=0
-CLIENT_EXIT=0
+API_ROUTES_EXIT=0
+PAGE_ROUTES_EXIT=0
 
-wait $SERVER_PID || SERVER_EXIT=$?
-wait $CLIENT_PID || CLIENT_EXIT=$?
+wait $API_ROUTES_PID || API_ROUTES_EXIT=$?
+wait $PAGE_ROUTES_PID || PAGE_ROUTES_EXIT=$?
 
-# 检查构建结果
-if [ $SERVER_EXIT -ne 0 ]; then
-  echo "   ❌ Server 构建失败"
-  cat /tmp/build-server.log
-  exit 1
+if [ $API_ROUTES_EXIT -ne 0 ]; then
+  echo "   ⚠️  API 路由生成失败（不影响构建）"
+  cat /tmp/gen-api-routes.log
+else
+  echo "   ✅ API 路由生成完成"
 fi
 
-if [ $CLIENT_EXIT -ne 0 ]; then
-  echo "   ❌ Client 构建失败"
-  cat /tmp/build-client.log
-  exit 1
+if [ $PAGE_ROUTES_EXIT -ne 0 ]; then
+  echo "   ⚠️  页面路由生成失败（不影响构建）"
+  cat /tmp/gen-page-routes.log
+else
+  echo "   ✅ 页面路由生成完成"
 fi
-
-echo "   ✅ Server 构建完成"
-echo "   ✅ Client 构建完成"
 print_time $STEP_START
 echo ""
 
 # ==================== 步骤 4 ====================
-echo "📦 [4/5] 准备 server 依赖产物"
+echo "🔨 [4/6] 并行构建 server 和 client"
 STEP_START=$(node -e "console.log(Date.now())")
 
-mkdir -p "$OUT_DIR/dist/client"
+# 给 server/client 构建子进程预留 8GB heap，缓解 vite build transform 阶段 OOM
+# （典型错误：Reached heap limit Allocation failed）。
+# 仅在外部未设置 NODE_OPTIONS 时注入，允许 CI / 用户通过外部环境变量完全覆盖
+BUILD_NODE_OPTIONS="${NODE_OPTIONS:---max-old-space-size=8192}"
 
-# 拷贝 HTML
-cp "$ROOT_DIR/dist/client/"*.html "$OUT_DIR/dist/client/" || true
+# 根据 only_frontend_change 决定是否构建 server
+if [[ "${only_frontend_change:-false}" == "true" ]]; then
+  echo "🔨 [4/6] 仅构建 client (only_frontend_change=true)"
 
-# 拷贝 run.sh 文件
-cp "$ROOT_DIR/scripts/run.sh" "$OUT_DIR/"
+  echo "   ├─ 启动 client 构建..."
+  NODE_OPTIONS="$BUILD_NODE_OPTIONS" npm run build:client > /tmp/build-client.log 2>&1
+  CLIENT_EXIT=$?
 
-# 清理无用文件
-rm -rf "$ROOT_DIR/dist/scripts"
-rm -rf "$ROOT_DIR/dist/tsconfig.node.tsbuildinfo"
+  if [ $CLIENT_EXIT -ne 0 ]; then
+    echo "   ❌ Client 构建失败"
+    cat /tmp/build-client.log
+    exit 1
+  fi
+
+  echo "   ✅ Client 构建完成"
+else
+  echo "🔨 [4/6] 并行构建 server 和 client"
+
+  # 并行构建
+  echo "   ├─ 启动 server 构建..."
+  NODE_OPTIONS="$BUILD_NODE_OPTIONS" npm run build:server > /tmp/build-server.log 2>&1 &
+  SERVER_PID=$!
+
+  echo "   ├─ 启动 client 构建..."
+  NODE_OPTIONS="$BUILD_NODE_OPTIONS" npm run build:client > /tmp/build-client.log 2>&1 &
+  CLIENT_PID=$!
+
+  # 等待两个构建完成
+  SERVER_EXIT=0
+  CLIENT_EXIT=0
+
+  wait $SERVER_PID || SERVER_EXIT=$?
+  wait $CLIENT_PID || CLIENT_EXIT=$?
+
+  # 检查构建结果
+  if [ $SERVER_EXIT -ne 0 ]; then
+    echo "   ❌ Server 构建失败"
+    cat /tmp/build-server.log
+    exit 1
+  fi
+
+  if [ $CLIENT_EXIT -ne 0 ]; then
+    echo "   ❌ Client 构建失败"
+    cat /tmp/build-client.log
+    exit 1
+  fi
+
+  echo "   ✅ Server 构建完成"
+  echo "   ✅ Client 构建完成"
+fi
 
 print_time $STEP_START
 echo ""
 
 # ==================== 步骤 5 ====================
-echo "✂️  [5/5] 智能依赖裁剪"
+echo "📦 [5/6] 准备产物"
 STEP_START=$(node -e "console.log(Date.now())")
 
-# 分析实际依赖、复制并裁剪 node_modules、生成精简的 package.json
-node "$ROOT_DIR/scripts/prune-smart.js"
+# 移动 client 下的 HTML 文件到 dist/dist/client，保证 views 路径在 dev/prod 下一致
+# 使用 mv 而非 cp：HTML 不能上传到公网 CDN，移走后 dist/client 中不再包含 HTML
+if [ -d "$DIST_DIR/client" ]; then
+  mkdir -p "$DIST_DIR/dist/client"
+  find "$DIST_DIR/client" -maxdepth 1 -name "*.html" -exec mv {} "$DIST_DIR/dist/client/" \;
+fi
+
+# server 相关产物准备（only_frontend_change=true 时跳过）
+if [[ "${only_frontend_change:-false}" == "true" ]]; then
+  echo "   [skip] 跳过 run.sh/.env 复制 (only_frontend_change=true)"
+else
+  # 拷贝 run.sh 到 dist/（prod 从 dist/ 启动，确保 cwd 一致性）
+  cp "$ROOT_DIR/scripts/run.sh" "$DIST_DIR/"
+
+  # 拷贝 .env 文件（如果存在）
+  if [ -f "$ROOT_DIR/.env" ]; then
+    cp "$ROOT_DIR/.env" "$DIST_DIR/"
+  fi
+fi
+
+# 清理无用文件
+rm -rf "$DIST_DIR/scripts"
+rm -rf "$DIST_DIR/tsconfig.node.tsbuildinfo"
+
+print_time $STEP_START
+echo ""
+
+# ==================== 步骤 6 ====================
+echo "✂️  [6/6] 智能依赖裁剪"
+STEP_START=$(node -e "console.log(Date.now())")
+
+# 智能依赖裁剪（仅全量构建时执行，纯前端场景不打包 server，无需裁剪）
+if [[ "${only_frontend_change:-false}" == "true" ]]; then
+  echo "✂️  [6/6] 跳过智能依赖裁剪 (only_frontend_change=true)"
+else
+  echo "✂️  [6/6] 智能依赖裁剪"
+
+  # 分析实际依赖、复制并裁剪 node_modules、生成精简的 package.json
+  node "$ROOT_DIR/scripts/prune-smart.js"
+fi
 
 print_time $STEP_START
 echo ""
@@ -111,10 +191,17 @@ echo "构建完成"
 print_time $TOTAL_START
 
 # 输出产物信息
-DIST_SIZE=$(du -sh "$OUT_DIR" | cut -f1)
-NODE_MODULES_SIZE=$(du -sh "$OUT_DIR/node_modules" | cut -f1)
-echo ""
-echo "📊 构建产物统计:"
-echo "   总大小:        $DIST_SIZE"
-echo "   node_modules: $NODE_MODULES_SIZE"
-echo ""
+DIST_SIZE=$(du -sh "$DIST_DIR" | cut -f1)
+if [[ "${only_frontend_change:-false}" == "true" ]]; then
+  echo ""
+  echo "📊 构建产物统计:"
+  echo "   产物大小:        $DIST_SIZE"
+  echo ""
+else
+  NODE_MODULES_SIZE=$(du -sh "$DIST_DIR/node_modules" | cut -f1)
+  echo ""
+  echo "📊 构建产物统计:"
+  echo "   产物大小:        $DIST_SIZE"
+  echo "   node_modules: $NODE_MODULES_SIZE"
+  echo ""
+fi
