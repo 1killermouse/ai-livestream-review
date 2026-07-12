@@ -34,9 +34,9 @@
 ```bash
 git clone https://github.com/1killermouse/ai-livestream-review.git
 cd ai-livestream-review
-npm install
+npm ci --ignore-scripts
 cp .env.example .env.local
-npm run dev:local
+npm run dev:standalone
 ```
 
 打开：
@@ -267,28 +267,21 @@ MVP 语料规模很小，因此暂未增加 Rerank，也没有为了技术名词
 ### 安装依赖
 
 ```bash
-npm install
+npm ci --ignore-scripts
 cp .env.example .env.local
 ```
 
-`dev:local` 检测不到 `lark-cli` 时会跳过妙搭环境拉取，继续使用本地 `.env.local`。真实密钥只应写入 `.env.local`，不要提交到仓库。
+`package-lock.json` 会锁定 Node 依赖版本。真实密钥只应写入 `.env.local`，不要提交到仓库。
+
+`dev:standalone` 使用固定本地测试身份和本地 CSRF Cookie，不依赖妙搭登录；该行为只在独立开发进程启用，不影响沙箱或生产环境。
 
 ### 配置直播录制工具
 
 ```bash
-git clone https://github.com/ihmily/DouyinLiveRecorder.git tools/DouyinLiveRecorder
-python3 -m venv tools/DouyinLiveRecorder/.venv
-tools/DouyinLiveRecorder/.venv/bin/python -m pip install -r tools/DouyinLiveRecorder/requirements.txt
+npm run setup:local
 ```
 
-在 `.env.local` 中配置：
-
-```bash
-DOUYIN_LIVE_RECORDER_PATH=./tools/DouyinLiveRecorder
-DOUYIN_LIVE_RECORDER_PYTHON=./tools/DouyinLiveRecorder/.venv/bin/python
-```
-
-外部录制工具目录已加入 `.gitignore`，不会复制到本仓库。详细说明见 [直播录制接入文档](docs/live-recorder-setup.md)。
+该命令会创建 `.env.local`、下载项目验证过的 DouyinLiveRecorder 固定提交，并创建 Python 虚拟环境。外部工具目录已加入 `.gitignore`。详细说明见 [直播录制接入文档](docs/live-recorder-setup.md)。
 
 ### 环境变量
 
@@ -318,7 +311,10 @@ DOUYIN_LIVE_RECORDER_PYTHON=./tools/DouyinLiveRecorder/.venv/bin/python
 ### 启动与构建
 
 ```bash
-# 本地开发
+# GitHub 下载者推荐，不需要妙搭登录
+npm run dev:standalone
+
+# 妙搭本地开发，会尝试拉取平台环境
 npm run dev:local
 
 # 代码规范、类型检查和单元测试
@@ -363,8 +359,12 @@ server/modules/feishu/                飞书文档生成与预览
 server/database/                      MVP 数据结构与迁移
 shared/api.interface.ts               前后端共享协议
 docs/                                 云服务、录制工具和开发上下文
+scripts/setup-local.js                固定版本外部工具初始化
+scripts/dev-standalone.js             不依赖妙搭登录的本地启动器
 .github/workflows/ci.yml              GitHub Actions 质量门禁
 ```
+
+本地目录为什么与 GitHub 下载结果不同，以及如何恢复相同工具版本，见 [可复现说明](docs/reproducibility.md)。
 
 ## 测试与质量门禁
 

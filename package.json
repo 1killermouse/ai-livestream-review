@@ -11,6 +11,7 @@
   },
   "scripts": {
     "dev": "./scripts/dev.sh",
+    "dev:standalone": "node ./scripts/dev-standalone.js",
     "dev:server": "NODE_ENV=development nest start --watch",
     "dev:client": "NODE_ENV=development vite --config vite.config.ts",
     "gen:db-schema": "npx -y @lark-apaas/db-schema-sync@latest --output server/database/schema.ts --export-custom-types",
@@ -35,7 +36,8 @@
     "upgrade": "npx -y @lark-apaas/fullstack-cli@latest sync --disable-gen-openapi",
     "prepare": "chmod +x .githooks/pre-commit 2>/dev/null; git config core.hooksPath .githooks 2>/dev/null || true",
     "postinstall": "npx -y @lark-apaas/fullstack-cli@latest action-plugin init",
-    "dev:local": "node ./scripts/dev-local.js"
+    "dev:local": "node ./scripts/dev-local.js",
+    "setup:local": "node ./scripts/setup-local.js"
   },
   "dependencies": {
     "@langchain/core": "^1.2.1",

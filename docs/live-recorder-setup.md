@@ -2,7 +2,13 @@
 
 ## 本地目录
 
-开发时把直播录制工具下载到：
+推荐直接运行项目提供的初始化命令：
+
+```bash
+npm run setup:local
+```
+
+该命令会把直播录制工具下载到：
 
 ```text
 tools/DouyinLiveRecorder
@@ -15,7 +21,11 @@ DOUYIN_LIVE_RECORDER_PATH=./tools/DouyinLiveRecorder
 DOUYIN_LIVE_RECORDER_PYTHON=./tools/DouyinLiveRecorder/.venv/bin/python
 ```
 
-该目录是外部开源工具 checkout，已经加入 `.gitignore`，不会作为本项目业务代码提交。
+该目录是外部开源工具 checkout，已经加入 `.gitignore`，不会作为本项目业务代码提交。初始化脚本会固定到本项目验证过的提交：
+
+```text
+add187f8d8c7ff7d231fcbee45cbb4f1ed247d3a
+```
 
 ## 工具来源
 
@@ -49,6 +59,12 @@ https://github.com/ihmily/DouyinLiveRecorder
 - `tools/DouyinLiveRecorder/requirements.txt` 中的 Python 依赖
 
 接真实录制前，需要安装 Python 依赖并确认 ffmpeg 可用。
+
+`npm run setup:local` 会自动创建 `.venv` 并安装 `requirements.txt`。只想下载并校验录制器源码时，可以运行：
+
+```bash
+npm run setup:local -- --skip-python
+```
 
 ## MVP 使用方式
 
