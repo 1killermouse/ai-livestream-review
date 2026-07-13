@@ -19,7 +19,6 @@ import { Button } from '@/components/ui/button';
 import {
   Empty,
   EmptyContent,
-  EmptyDescription,
   EmptyHeader,
   EmptyMedia,
   EmptyTitle,
@@ -117,9 +116,6 @@ const HistoryPage: React.FC = () => {
           <h1 className="mt-2 text-3xl font-semibold tracking-normal">
             历史复盘
           </h1>
-          <p className="mt-2 text-sm leading-6 text-muted-foreground">
-            回看之前的风险、节奏和整改话术，直接接着追问。
-          </p>
         </div>
         <Button type="button" onClick={() => navigate('/')}>
           <PlusCircle className="size-4" />
@@ -253,9 +249,6 @@ const HistoryPage: React.FC = () => {
               <FileClock className="size-5" />
             </EmptyMedia>
             <EmptyTitle>还没有历史复盘</EmptyTitle>
-            <EmptyDescription>
-              完成第一场直播分析后，报告会自动保存在这里。
-            </EmptyDescription>
           </EmptyHeader>
           <EmptyContent>
             <Button type="button" onClick={() => navigate('/')}>

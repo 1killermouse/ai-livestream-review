@@ -44,7 +44,6 @@ import { Button } from '@/components/ui/button';
 import {
   Card,
   CardContent,
-  CardDescription,
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
@@ -1054,10 +1053,6 @@ const DashboardPage: React.FC = () => {
               <h1 className="mt-4 text-3xl font-semibold tracking-normal sm:text-4xl">
                 AI 知识付费直播复盘
               </h1>
-              <p className="mt-3 max-w-2xl text-sm leading-7 text-muted-foreground sm:text-base">
-                一场直播，直接变成一份能执行的复盘。提交直播链接或录屏后，
-                你会看到哪句话有风险、哪个环节节奏不对，以及下一场可以怎么说。
-              </p>
             </div>
             <Button
               type="button"
@@ -1103,9 +1098,6 @@ const DashboardPage: React.FC = () => {
                 <CardTitle className="text-xl tracking-normal">
                   提交一场直播
                 </CardTitle>
-                <CardDescription className="mt-1 leading-6">
-                  选择最符合你现在情况的方式，系统会分析完整时长。
-                </CardDescription>
               </div>
             </div>
           </CardHeader>
@@ -1164,9 +1156,6 @@ const DashboardPage: React.FC = () => {
                       </Button>
                     ) : null}
                   </div>
-                  <p className="text-xs leading-5 text-muted-foreground">
-                    点击后持续录制，主播下播时自动结束。结束后由你手动开始复盘。
-                  </p>
                 </div>
 
                 {captureResult ? (
@@ -1226,9 +1215,6 @@ const DashboardPage: React.FC = () => {
                         <div>
                           <p className="text-sm font-medium">
                             录屏已经保存，可以开始复盘
-                          </p>
-                          <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                            点击一次即可完成上传、带时间点转写、风险检查和整改建议。
                           </p>
                         </div>
                         {captureResult.files.length > 0 ? (
@@ -1338,9 +1324,6 @@ const DashboardPage: React.FC = () => {
                       <Upload className="size-7 text-primary" />
                       <p className="mt-3 text-sm font-medium">
                         点击选择直播录屏
-                      </p>
-                      <p className="mt-1 text-xs text-muted-foreground">
-                        支持常见视频和音频格式，按完整时长分析
                       </p>
                     </>
                   )}
@@ -1620,9 +1603,6 @@ const DashboardPage: React.FC = () => {
                 <h2 className="mt-1 text-xl font-semibold tracking-normal">
                   这场直播最该先改的三处
                 </h2>
-                <p className="mt-2 text-sm text-muted-foreground">
-                  已按风险高低排序，先改这些最划算。
-                </p>
               </div>
               <Button
                 type="button"
@@ -1755,9 +1735,6 @@ const DashboardPage: React.FC = () => {
             <h2 className="mt-1 text-xl font-semibold tracking-normal">
               风险原话与可替换说法
             </h2>
-            <p className="mt-2 text-sm text-muted-foreground">
-              同时检查明确违禁词和“没有敏感词但整体承诺过头”的语义风险。
-            </p>
           </section>
 
           {report.findings.length > 0 ? (
@@ -1846,9 +1823,6 @@ const DashboardPage: React.FC = () => {
             <h2 className="mt-1 text-xl font-semibold tracking-normal">
               直播节奏检查
             </h2>
-            <p className="mt-2 text-sm text-muted-foreground">
-              按说了多少内容和出现的时间点，判断每个阶段是否讲到位。
-            </p>
             <div className="mt-4 grid gap-3 md:grid-cols-2">
               {report.frameworkMatches.map((match: FrameworkMatchSummary) => (
                 <div
@@ -1880,9 +1854,6 @@ const DashboardPage: React.FC = () => {
             <h2 className="mt-1 text-xl font-semibold tracking-normal">
               逐字稿时间轴
             </h2>
-            <p className="mt-2 text-sm text-muted-foreground">
-              每个片段都保留开始和结束时间，方便回到录屏核对。
-            </p>
             <div className="mt-5 space-y-0">
               {report.transcriptSegments.map(
                 (segment: TranscriptSegmentSummary, index: number) => {
@@ -1954,9 +1925,6 @@ const DashboardPage: React.FC = () => {
               <h2 className="mt-1 text-xl font-semibold tracking-normal">
                 直播数据复盘
               </h2>
-              <p className="mt-2 text-sm text-muted-foreground">
-                把在线、互动和成交线索放回同一条话术时间轴。
-              </p>
             </div>
             <Badge variant="secondary">
               {liveDataReplay?.sourceLabel || '示例第三方数据'}
@@ -2036,9 +2004,6 @@ const DashboardPage: React.FC = () => {
                 <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
                   <div>
                     <p className="text-sm font-medium">数据曲线与话术时间点</p>
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      横轴与逐字稿使用同一套时间点。
-                    </p>
                   </div>
                   <span className="text-xs text-muted-foreground">
                     {liveDataReplay.points.length} 个采样点
@@ -2141,9 +2106,6 @@ const DashboardPage: React.FC = () => {
             <h2 className="mt-1 text-xl font-semibold tracking-normal">
               复盘话术与飞书沉淀
             </h2>
-            <p className="mt-2 text-sm text-muted-foreground">
-              把本场结论整理成主播能直接照着改、团队能继续协作的版本。
-            </p>
           </section>
 
           <div className="grid gap-5 xl:grid-cols-[1.15fr_0.85fr]">
@@ -2178,9 +2140,6 @@ const DashboardPage: React.FC = () => {
                   </div>
                   <div>
                     <p className="text-sm font-medium">飞书复盘文档</p>
-                    <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                      整理、转发并沉淀本场直播。
-                    </p>
                   </div>
                 </div>
                 <Badge
@@ -2278,9 +2237,6 @@ const DashboardPage: React.FC = () => {
             <h2 className="mt-1 text-xl font-semibold tracking-normal">
               追问这场直播
             </h2>
-            <p className="mt-2 text-sm text-muted-foreground">
-              回答会结合本场逐字稿、风险点和直播框架，并标出参考时间点。
-            </p>
           </section>
 
           <div className="flex flex-wrap gap-2">
@@ -2310,9 +2266,6 @@ const DashboardPage: React.FC = () => {
                 <MessageSquareText className="size-7 text-primary" />
                 <p className="mt-3 text-sm font-medium">
                   直接问这场直播的具体问题
-                </p>
-                <p className="mt-1 max-w-md text-xs leading-5 text-muted-foreground">
-                  例如哪句话风险最大、哪个时间段掉人、课程承接应该补什么。
                 </p>
               </div>
             ) : (

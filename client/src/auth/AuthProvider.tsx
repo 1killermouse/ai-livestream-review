@@ -131,11 +131,6 @@ const AccountForm: React.FC<AccountFormProps> = ({
           <h2 className="mt-5 text-2xl font-semibold tracking-normal">
             {initialized ? '登录主播复盘台' : '创建第一个管理账号'}
           </h2>
-          {!initialized ? (
-            <p className="mt-2 text-sm leading-6 text-muted-foreground">
-              第一次使用只需设置一次，创建后会自动登录。
-            </p>
-          ) : null}
 
           {errorMessage ? (
             <Alert variant="destructive" className="mt-5">
