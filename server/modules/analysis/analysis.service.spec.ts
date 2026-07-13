@@ -5,6 +5,7 @@ import { AnalysisService } from './analysis.service';
 import { DeepSeekAnalysisService } from './deepseek-analysis.service';
 import { LiveScriptPolicyProvider } from './live-script-policy.provider';
 import { RagKnowledgeProvider } from './rag-knowledge.provider';
+import { HistoryService } from '../history/history.service';
 
 describe('AnalysisService', () => {
   it('runs long file analysis as a pollable background job', async () => {
@@ -28,31 +29,44 @@ describe('AnalysisService', () => {
     const deepSeekAnalysisService = {
       isConfigured: jest.fn().mockReturnValue(false),
     } as unknown as DeepSeekAnalysisService;
+    const historyService = {
+      saveReport: jest.fn().mockImplementation(async (_ownerId, report) => ({
+        ...report,
+        id: '8ceec76e-e0a8-42bb-8a51-d2f60f4d7cc4',
+      })),
+    } as unknown as HistoryService;
     const service = new AnalysisService(
       {} as LiveScriptPolicyProvider,
       aliyunAsrService,
       ragKnowledgeProvider,
       deepSeekAnalysisService,
+      historyService,
     );
 
     const startedJob = service.startFileAnalysisJob({
       inputSource: 'recording_upload',
       recordingName: '测试录屏.mp4',
       fileUrl: 'https://example.com/test.mp4',
-    });
+    }, 'anchor-1');
 
     expect(startedJob).toMatchObject({
       status: 'processing',
       phase: 'transcribing',
     });
 
-    let completedJob = service.getFileAnalysisJob(startedJob.id);
+    const anchorUser = {
+      id: 'anchor-1',
+      username: 'anchor_one',
+      displayName: '主播一',
+      role: 'anchor' as const,
+    };
+    let completedJob = service.getFileAnalysisJob(startedJob.id, anchorUser);
     for (let attempt = 0; attempt < 20; attempt += 1) {
       if (completedJob.status !== 'processing') {
         break;
       }
       await new Promise((resolve: () => void) => setTimeout(resolve, 0));
-      completedJob = service.getFileAnalysisJob(startedJob.id);
+      completedJob = service.getFileAnalysisJob(startedJob.id, anchorUser);
     }
 
     expect(completedJob.status).toBe('completed');
@@ -70,5 +84,9 @@ describe('AnalysisService', () => {
       ],
     });
     expect(aliyunAsrService.transcribeFileUrl).toHaveBeenCalledTimes(1);
+    expect(historyService.saveReport).toHaveBeenCalledWith(
+      'anchor-1',
+      expect.objectContaining({ title: '测试录屏.mp4' }),
+    );
   });
 });

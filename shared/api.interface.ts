@@ -16,6 +16,44 @@ export interface AccessProfile {
   role: UserRole;
 }
 
+export interface InternalUser {
+  id: string;
+  username: string;
+  displayName: string;
+  role: UserRole;
+}
+
+export interface AuthStatusResponse {
+  initialized: boolean;
+  authenticated: boolean;
+  user?: InternalUser;
+}
+
+export interface AuthSessionResponse {
+  user: InternalUser;
+  token: string;
+}
+
+export interface BootstrapAccountRequest {
+  username: string;
+  displayName: string;
+  password: string;
+}
+
+export interface LoginRequest {
+  username: string;
+  password: string;
+}
+
+export interface CreateInternalAccountRequest extends BootstrapAccountRequest {
+  role?: UserRole;
+}
+
+export interface InternalAccountSummary extends InternalUser {
+  active: boolean;
+  createdAt: string;
+}
+
 export interface WorkspaceStats {
   sessions: number;
   pendingFindings: number;
@@ -224,6 +262,31 @@ export interface PrototypeAnalysisReport {
   frameworkMatches: FrameworkMatchSummary[];
   ragReferences: RagReferenceSummary[];
   agentTrace: AgentTraceStep[];
+}
+
+export interface HistoryReportSummary {
+  id: string;
+  title: string;
+  inputSource: InputSource;
+  durationSeconds: number;
+  transcriptWordCount: number;
+  frameworkName: string;
+  score: number;
+  totalFindings: number;
+  highRiskFindings: number;
+  createdAt: string;
+  owner: Pick<InternalUser, 'id' | 'username' | 'displayName'>;
+}
+
+export interface HistoryReportListResponse {
+  items: HistoryReportSummary[];
+  total: number;
+}
+
+export interface HistoryReportDetail {
+  report: PrototypeAnalysisReport;
+  createdAt: string;
+  owner: Pick<InternalUser, 'id' | 'username' | 'displayName'>;
 }
 
 export type ReportChatRole = 'user' | 'assistant';

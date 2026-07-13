@@ -1,5 +1,7 @@
 import { Module } from '@nestjs/common';
 
+import { HistoryModule } from '../history/history.module';
+
 import { AliyunEmbeddingService } from './aliyun-embedding.service';
 import { AliyunAsrService } from './aliyun-asr.service';
 import { AnalysisController } from './analysis.controller';
@@ -9,6 +11,7 @@ import { LiveScriptPolicyProvider } from './live-script-policy.provider';
 import { RagKnowledgeProvider } from './rag-knowledge.provider';
 
 @Module({
+  imports: [HistoryModule],
   controllers: [AnalysisController],
   providers: [
     AliyunEmbeddingService,

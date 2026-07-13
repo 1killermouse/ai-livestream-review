@@ -10,6 +10,7 @@ import type {
   FileAnalysisJob,
   FileUrlAnalysisRequest,
   FrameworkMatchSummary,
+  InternalUser,
   PrototypeAnalysisReport,
   RagReferenceSummary,
   ReportChatRequest,
@@ -25,6 +26,7 @@ import { DeepSeekAnalysisService } from './deepseek-analysis.service';
 import type { DomainPolicyProvider } from './domain-policy.interface';
 import { LiveScriptPolicyProvider } from './live-script-policy.provider';
 import { RagKnowledgeProvider } from './rag-knowledge.provider';
+import { HistoryService } from '../history/history.service';
 
 const AnalysisState = Annotation.Root({
   sessionId: Annotation<string>,
@@ -68,15 +70,20 @@ interface ReportAgentOptions {
   customFramework?: string;
 }
 
+interface InternalFileAnalysisJob extends FileAnalysisJob {
+  ownerId: string;
+}
+
 @Injectable()
 export class AnalysisService {
-  private readonly analysisJobs = new Map<string, FileAnalysisJob>();
+  private readonly analysisJobs = new Map<string, InternalFileAnalysisJob>();
 
   constructor(
     private readonly policyProvider: LiveScriptPolicyProvider,
     private readonly aliyunAsrService: AliyunAsrService,
     private readonly ragKnowledgeProvider: RagKnowledgeProvider,
     private readonly deepSeekAnalysisService: DeepSeekAnalysisService,
+    private readonly historyService: HistoryService,
   ) {}
 
   async getCapability(): Promise<AnalysisCapability> {
@@ -180,6 +187,7 @@ export class AnalysisService {
 
   async createReportFromFileUrl(
     request: FileUrlAnalysisRequest,
+    ownerId: string,
   ): Promise<PrototypeAnalysisReport> {
     const fileUrl: string = request.fileUrl?.trim();
     if (!fileUrl) {
@@ -188,18 +196,24 @@ export class AnalysisService {
 
     const transcriptSegments: TranscriptSegmentSummary[] =
       await this.aliyunAsrService.transcribeFileUrl(fileUrl);
-    return this.createReportFromTranscript(request, transcriptSegments);
+    const report: PrototypeAnalysisReport =
+      await this.createReportFromTranscript(request, transcriptSegments);
+    return this.historyService.saveReport(ownerId, report);
   }
 
-  startFileAnalysisJob(request: FileUrlAnalysisRequest): FileAnalysisJob {
+  startFileAnalysisJob(
+    request: FileUrlAnalysisRequest,
+    ownerId: string,
+  ): FileAnalysisJob {
     if (!request.fileUrl?.trim()) {
       throw new Error('fileUrl 不能为空');
     }
 
     this.pruneAnalysisJobs();
     const now: string = new Date().toISOString();
-    const job: FileAnalysisJob = {
+    const job: InternalFileAnalysisJob = {
       id: randomUUID(),
+      ownerId,
       status: 'processing',
       phase: 'transcribing',
       createdAt: now,
@@ -207,15 +221,15 @@ export class AnalysisService {
     };
     this.analysisJobs.set(job.id, job);
     void this.runFileAnalysisJob(job.id, request);
-    return { ...job };
+    return this.toPublicJob(job);
   }
 
-  getFileAnalysisJob(id: string): FileAnalysisJob {
-    const job: FileAnalysisJob | undefined = this.analysisJobs.get(id);
-    if (!job) {
+  getFileAnalysisJob(id: string, user: InternalUser): FileAnalysisJob {
+    const job: InternalFileAnalysisJob | undefined = this.analysisJobs.get(id);
+    if (!job || (user.role !== 'admin' && job.ownerId !== user.id)) {
       throw new NotFoundException('没有找到这次录屏分析任务');
     }
-    return { ...job };
+    return this.toPublicJob(job);
   }
 
   async transcribeUrl(
@@ -397,10 +411,17 @@ export class AnalysisService {
       });
       const report: PrototypeAnalysisReport =
         await this.createReportFromTranscript(request, transcriptSegments);
+      const job: InternalFileAnalysisJob | undefined =
+        this.analysisJobs.get(jobId);
+      if (!job) {
+        return;
+      }
+      const savedReport: PrototypeAnalysisReport =
+        await this.historyService.saveReport(job.ownerId, report);
       this.updateAnalysisJob(jobId, {
         status: 'completed',
         phase: 'completed',
-        report,
+        report: savedReport,
       });
     } catch {
       this.updateAnalysisJob(jobId, {
@@ -416,7 +437,8 @@ export class AnalysisService {
     jobId: string,
     updates: Partial<FileAnalysisJob>,
   ): void {
-    const current: FileAnalysisJob | undefined = this.analysisJobs.get(jobId);
+    const current: InternalFileAnalysisJob | undefined =
+      this.analysisJobs.get(jobId);
     if (!current) {
       return;
     }
@@ -424,6 +446,7 @@ export class AnalysisService {
       ...current,
       ...updates,
       id: current.id,
+      ownerId: current.ownerId,
       createdAt: current.createdAt,
       updatedAt: new Date().toISOString(),
     });
@@ -437,19 +460,26 @@ export class AnalysisService {
       }
     }
 
-    const oldestJobs: FileAnalysisJob[] = [...this.analysisJobs.values()].sort(
-      (left: FileAnalysisJob, right: FileAnalysisJob): number =>
+    const oldestJobs: InternalFileAnalysisJob[] = [
+      ...this.analysisJobs.values(),
+    ].sort(
+      (left: InternalFileAnalysisJob, right: InternalFileAnalysisJob): number =>
         Date.parse(left.createdAt) - Date.parse(right.createdAt),
     );
     while (
       this.analysisJobs.size >= MAX_IN_MEMORY_ANALYSIS_JOBS &&
       oldestJobs.length > 0
     ) {
-      const oldest: FileAnalysisJob | undefined = oldestJobs.shift();
+      const oldest: InternalFileAnalysisJob | undefined = oldestJobs.shift();
       if (oldest) {
         this.analysisJobs.delete(oldest.id);
       }
     }
+  }
+
+  private toPublicJob(job: InternalFileAnalysisJob): FileAnalysisJob {
+    const { ownerId: _ownerId, ...publicJob } = job;
+    return { ...publicJob };
   }
 
   private async runReportAgent(

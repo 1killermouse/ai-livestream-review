@@ -28,8 +28,16 @@ import {
   WandSparkles,
 } from 'lucide-react';
 import { CartesianGrid, Line, LineChart, XAxis, YAxis } from 'recharts';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 
-import { analytics, analysis, feishu, recorder, storage } from '@/api';
+import {
+  analytics,
+  analysis,
+  feishu,
+  history as historyApi,
+  recorder,
+  storage,
+} from '@/api';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -62,6 +70,7 @@ import type {
   FileAnalysisJob,
   FileUrlAnalysisRequest,
   FrameworkMatchSummary,
+  HistoryReportDetail,
   InputSource,
   LiveDataInsight,
   LiveDataReplayResult,
@@ -419,8 +428,13 @@ const AnalysisProgress: React.FC<AnalysisProgressProps> = ({
 };
 
 const DashboardPage: React.FC = () => {
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const historicalReportId: string | null = searchParams.get('report');
   const [capability, setCapability] = useState<AnalysisCapability | null>(null);
   const [loading, setLoading] = useState<boolean>(true);
+  const [loadingHistoricalReport, setLoadingHistoricalReport] =
+    useState<boolean>(Boolean(historicalReportId));
   const [submitting, setSubmitting] = useState<boolean>(false);
   const [analysisMode, setAnalysisMode] = useState<AnalysisMode>(null);
   const [progress, setProgress] = useState<number>(0);
@@ -437,6 +451,8 @@ const DashboardPage: React.FC = () => {
   const [showFrameworkSettings, setShowFrameworkSettings] =
     useState<boolean>(false);
   const [report, setReport] = useState<PrototypeAnalysisReport | null>(null);
+  const [historicalDetail, setHistoricalDetail] =
+    useState<HistoryReportDetail | null>(null);
   const [isDemoReport, setIsDemoReport] = useState<boolean>(false);
   const [reportView, setReportView] = useState<ReportView>('overview');
   const [copiedLabel, setCopiedLabel] = useState<string>('');
@@ -474,6 +490,46 @@ const DashboardPage: React.FC = () => {
 
     void loadCapability();
   }, []);
+
+  useEffect(() => {
+    if (!historicalReportId) {
+      setLoadingHistoricalReport(false);
+      setHistoricalDetail(null);
+      return;
+    }
+
+    let disposed = false;
+    setLoadingHistoricalReport(true);
+    setErrorMessage('');
+    setReport(null);
+
+    const loadHistoricalReport = async (): Promise<void> => {
+      try {
+        const detail: HistoryReportDetail =
+          await historyApi.getReport(historicalReportId);
+        if (!disposed) {
+          setHistoricalDetail(detail);
+          setReport(detail.report);
+          setIsDemoReport(false);
+          setReportView('overview');
+        }
+      } catch {
+        if (!disposed) {
+          setHistoricalDetail(null);
+          setErrorMessage('这份历史复盘暂时无法打开，请返回历史记录重试。');
+        }
+      } finally {
+        if (!disposed) {
+          setLoadingHistoricalReport(false);
+        }
+      }
+    };
+
+    void loadHistoricalReport();
+    return () => {
+      disposed = true;
+    };
+  }, [historicalReportId]);
 
   useEffect(() => {
     if (!submitting) {
@@ -662,6 +718,7 @@ const DashboardPage: React.FC = () => {
   ): void => {
     setProgress(100);
     setReport(result);
+    setHistoricalDetail(null);
     setIsDemoReport(demo);
     setReportView('overview');
   };
@@ -928,14 +985,37 @@ const DashboardPage: React.FC = () => {
     setRecordingName('');
     setSelectedRecordingFile(null);
     setCaptureResult(null);
+    setHistoricalDetail(null);
+    navigate('/', { replace: true });
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
-  if (loading) {
+  if (loading || loadingHistoricalReport) {
     return (
       <main className="mx-auto w-full max-w-7xl space-y-6 px-4 py-8 sm:px-6 lg:px-8">
         <Skeleton className="h-36 w-full" />
         <Skeleton className="h-[34rem] w-full" />
+      </main>
+    );
+  }
+
+  if (historicalReportId && !report) {
+    return (
+      <main className="mx-auto w-full max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+        <Alert variant="destructive">
+          <ShieldAlert className="size-4" />
+          <AlertTitle>历史复盘没有打开</AlertTitle>
+          <AlertDescription>{errorMessage}</AlertDescription>
+        </Alert>
+        <Button
+          type="button"
+          className="mt-5"
+          variant="outline"
+          onClick={() => navigate('/history')}
+        >
+          <FileText className="size-4" />
+          返回历史记录
+        </Button>
       </main>
     );
   }
@@ -1353,6 +1433,9 @@ const DashboardPage: React.FC = () => {
               {isDemoReport ? (
                 <Badge variant="secondary">示例报告</Badge>
               ) : null}
+              {historicalDetail ? (
+                <Badge variant="secondary">历史记录</Badge>
+              ) : null}
               <span className="text-xs text-muted-foreground">
                 分析标准：{report.frameworkName}
               </span>
@@ -1364,9 +1447,30 @@ const DashboardPage: React.FC = () => {
               {formatTime(report.durationSeconds)} ·{' '}
               {report.transcriptWordCount} 字 ·{' '}
               {report.transcriptSegments.length} 个时间轴片段
+              {historicalDetail ? (
+                <>
+                  {' '}· {historicalDetail.owner.displayName} ·{' '}
+                  {new Date(historicalDetail.createdAt).toLocaleString('zh-CN', {
+                    year: 'numeric',
+                    month: '2-digit',
+                    day: '2-digit',
+                    hour: '2-digit',
+                    minute: '2-digit',
+                    hour12: false,
+                  })}
+                </>
+              ) : null}
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => navigate('/history')}
+            >
+              <FileText className="size-4" />
+              历史记录
+            </Button>
             <Button
               type="button"
               variant="outline"

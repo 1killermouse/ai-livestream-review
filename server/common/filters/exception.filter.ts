@@ -21,7 +21,7 @@ export class GlobalExceptionFilter implements ExceptionFilter {
 
     if (exception instanceof BusinessException) {
       // 业务异常
-      httpStatus = exception.httpStatus;
+      httpStatus = exception.getHttpStatus();
       errorResponse = {
         error: {
           code: exception.code,

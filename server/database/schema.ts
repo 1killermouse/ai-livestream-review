@@ -188,7 +188,7 @@ export const liveSessions = pgTable("live_sessions", {
   liveStartedAt: customTimestamptz("live_started_at", { precision: 6 }),
   durationSeconds: integer("duration_seconds").notNull().default(0),
   status: varchar("status", { length: 24 }).notNull().default('draft'),
-  inputSource: varchar("input_source", { length: 24 }).notNull().default('live_url'),
+  inputSource: varchar("traffic_source", { length: 24 }).notNull().default('live_url'),
   createdAt: customTimestamptz("created_at", { precision: 6 }).notNull().default(sql`CURRENT_TIMESTAMP`),
   updatedAt: customTimestamptz("updated_at", { precision: 6 }).notNull().default(sql`CURRENT_TIMESTAMP`),
 }, (table) => [

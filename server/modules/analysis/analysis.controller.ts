@@ -1,9 +1,14 @@
-import { Body, Controller, Get, Param, Post } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Req } from '@nestjs/common';
+import type { Request } from 'express';
+
+import { ResponseCode } from '@server/common/constants/api_response_code';
+import { BusinessException } from '@server/common/interfaces/exception.interface';
 
 import type {
   AnalysisCapability,
   FileAnalysisJob,
   FileUrlAnalysisRequest,
+  InternalUser,
   PrototypeAnalysisReport,
   PrototypeAnalysisRequest,
   ReportChatRequest,
@@ -32,19 +37,35 @@ export class AnalysisController {
 
   @Post('from-file-url')
   async createReportFromFileUrl(
+    @Req() request: Request,
     @Body() body: FileUrlAnalysisRequest,
   ): Promise<PrototypeAnalysisReport> {
-    return this.analysisService.createReportFromFileUrl(body);
+    return this.analysisService.createReportFromFileUrl(
+      body,
+      this.requireUser(request).id,
+    );
   }
 
   @Post('jobs')
-  startFileAnalysisJob(@Body() body: FileUrlAnalysisRequest): FileAnalysisJob {
-    return this.analysisService.startFileAnalysisJob(body);
+  startFileAnalysisJob(
+    @Req() request: Request,
+    @Body() body: FileUrlAnalysisRequest,
+  ): FileAnalysisJob {
+    return this.analysisService.startFileAnalysisJob(
+      body,
+      this.requireUser(request).id,
+    );
   }
 
   @Get('jobs/:id')
-  getFileAnalysisJob(@Param('id') id: string): FileAnalysisJob {
-    return this.analysisService.getFileAnalysisJob(id);
+  getFileAnalysisJob(
+    @Req() request: Request,
+    @Param('id') id: string,
+  ): FileAnalysisJob {
+    return this.analysisService.getFileAnalysisJob(
+      id,
+      this.requireUser(request),
+    );
   }
 
   @Post('transcribe-url')
@@ -59,5 +80,15 @@ export class AnalysisController {
     @Body() body: ReportChatRequest,
   ): Promise<ReportChatResponse> {
     return this.analysisService.chatWithReport(body);
+  }
+
+  private requireUser(request: Request): InternalUser {
+    if (request.internalUser) {
+      return request.internalUser;
+    }
+    throw new BusinessException(
+      ResponseCode.UNAUTHORIZED,
+      '请先登录后再继续',
+    );
   }
 }

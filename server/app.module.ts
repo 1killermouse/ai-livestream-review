@@ -6,7 +6,9 @@ import { GlobalExceptionFilter } from './common/filters/exception.filter';
 import { AccessModule } from './modules/access/access.module';
 import { AnalysisModule } from './modules/analysis/analysis.module';
 import { AnalyticsModule } from './modules/analytics/analytics.module';
+import { AuthModule } from './modules/auth/auth.module';
 import { FeishuModule } from './modules/feishu/feishu.module';
+import { HistoryModule } from './modules/history/history.module';
 import { RecorderModule } from './modules/recorder/recorder.module';
 import { StorageModule } from './modules/storage/storage.module';
 import { WorkspaceModule } from './modules/workspace/workspace.module';
@@ -15,8 +17,12 @@ import { ViewModule } from './modules/view/view.module';
 @Module({
   imports: [
     // 平台 Module，提供平台能力
-    PlatformModule.forRoot(),
+    PlatformModule.forRoot({
+      enableCsrf: false,
+    }),
     // ====== @route-section: business-modules START ======
+    AuthModule,
+    HistoryModule,
     AccessModule,
     AnalysisModule,
     AnalyticsModule,

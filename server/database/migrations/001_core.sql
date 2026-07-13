@@ -16,13 +16,13 @@ CREATE TABLE IF NOT EXISTS live_sessions (
   live_started_at timestamptz,
   duration_seconds integer NOT NULL DEFAULT 0,
   status varchar(24) NOT NULL DEFAULT 'draft',
-  input_source varchar(24) NOT NULL DEFAULT 'live_url',
+  traffic_source varchar(24) NOT NULL DEFAULT 'live_url',
   created_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at timestamptz NOT NULL DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT live_sessions_status_check
     CHECK (status IN ('draft', 'processing', 'completed', 'failed')),
   CONSTRAINT live_sessions_input_source_check
-    CHECK (input_source IN ('live_url', 'recording_upload'))
+    CHECK (traffic_source IN ('live_url', 'recording_upload'))
 );
 
 CREATE INDEX IF NOT EXISTS live_sessions_owner_idx
