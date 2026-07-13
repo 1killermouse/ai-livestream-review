@@ -32,7 +32,7 @@ npm run setup:local
 npm run dev:standalone
 ```
 
-`dev:standalone` 会从 `.spark/meta.json` 推导应用路径，并且只在本地开发进程中注入固定测试身份和 CSRF Cookie，不需要妙搭登录或私人预览 Session。该逻辑不会在 `dev:local`、沙箱或生产构建中启用。
+`dev:standalone` 使用固定的 `/app/` 本地路径，并且只在本地开发进程中注入固定测试身份和 CSRF Cookie，不需要妙搭登录或私人预览 Session。该逻辑不会在 `dev:local`、沙箱或生产构建中启用。
 
 只看完整示例时，可以跳过录制器安装：
 

@@ -53,6 +53,7 @@ import { Progress } from '@/components/ui/progress';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
+import { buildDemoReport } from '@/data/demo-report';
 import type {
   AnalysisCapability,
   BrowserRecordingUploadResult,
@@ -697,13 +698,12 @@ const DashboardPage: React.FC = () => {
     setErrorMessage('');
 
     try {
-      const result: PrototypeAnalysisReport =
-        await analysis.createPrototypeReport({
-          inputSource: 'recording_upload',
-          recordingName: 'AI 知识付费直播示例',
-          frameworkName: frameworkName.trim() || DEFAULT_FRAMEWORK_NAME,
-          customFramework: customFramework.trim() || undefined,
-        });
+      const result: PrototypeAnalysisReport = buildDemoReport({
+        inputSource: 'recording_upload',
+        recordingName: 'AI 知识付费直播示例',
+        frameworkName: frameworkName.trim() || DEFAULT_FRAMEWORK_NAME,
+        customFramework: customFramework.trim() || undefined,
+      });
       completeReport(result, true);
     } catch {
       setErrorMessage('示例报告生成失败，请稍后再试。');

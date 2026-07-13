@@ -26,7 +26,7 @@ try {
 process.env.MIAODA_APP_TYPE ||= '3';
 process.env.MIAODA_LOCAL_DEV ||= '1';
 process.env.STANDALONE_LOCAL_DEV = '1';
-process.env.CLIENT_BASE_PATH ||= `/app/${appId}/`;
+process.env.CLIENT_BASE_PATH = '/app/';
 process.env.MIAODA_APP_ID ||= appId;
 process.env.app_id ||= appId;
 process.env.SUDA_WEBUSER = JSON.stringify({
@@ -37,6 +37,10 @@ process.env.SUDA_WEBUSER = JSON.stringify({
 process.env.SERVER_PORT ||= '3100';
 process.env.CLIENT_DEV_PORT ||= '8081';
 process.env.SERVER_HOST ||= 'localhost';
+
+console.log(
+  `[dev:standalone] 访问地址：http://localhost:${process.env.CLIENT_DEV_PORT}/app/`,
+);
 
 const npx = process.platform === 'win32' ? 'npx.cmd' : 'npx';
 const child = spawn(

@@ -42,7 +42,7 @@ npm run dev:standalone
 打开：
 
 ```text
-http://localhost:8081/app/app_179b24s0sng/
+http://localhost:8081/app/
 ```
 
 点击“先看完整示例”即可查看完整报告。该入口使用内置时间戳逐字稿和确定性演示结果，不消耗 ASR、Embedding 或 DeepSeek 额度。
@@ -343,7 +343,7 @@ npm run build:prod
 开发环境还提供 OpenAPI：
 
 ```text
-http://localhost:8081/app/app_179b24s0sng/dev/openapi.json
+http://localhost:8081/app/dev/openapi.json
 ```
 
 ## 项目结构
