@@ -36,11 +36,31 @@ process.env.SUDA_WEBUSER = JSON.stringify({
 });
 process.env.SERVER_PORT ||= '3100';
 process.env.CLIENT_DEV_PORT ||= '8081';
+process.env.CLIENT_DEV_HOST = '0.0.0.0';
 process.env.SERVER_HOST ||= 'localhost';
 
-console.log(
-  `[dev:standalone] 访问地址：http://localhost:${process.env.CLIENT_DEV_PORT}/app/`,
-);
+const localUrl = `http://127.0.0.1:${process.env.CLIENT_DEV_PORT}/app/`;
+
+async function waitForFrontend() {
+  for (let attempt = 0; attempt < 60; attempt += 1) {
+    try {
+      const response = await fetch(localUrl, {
+        headers: { Accept: 'text/html' },
+      });
+      if (response.ok) {
+        console.log(`\n[dev:standalone] 页面已就绪：${localUrl}\n`);
+        return;
+      }
+    } catch {
+      // The frontend is still compiling.
+    }
+    await new Promise((resolve) => setTimeout(resolve, 500));
+  }
+
+  console.error(
+    `[dev:standalone] 30 秒内未能打开 ${localUrl}，请查看上方启动日志。`,
+  );
+}
 
 const npx = process.platform === 'win32' ? 'npx.cmd' : 'npx';
 const child = spawn(
@@ -62,6 +82,8 @@ const child = spawn(
     stdio: 'inherit',
   },
 );
+
+void waitForFrontend();
 
 for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP']) {
   process.on(signal, () => child.kill(signal));
