@@ -53,6 +53,7 @@ import { Progress } from '@/components/ui/progress';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
+import { buildDemoLiveDataReplay } from '@/data/demo-live-data';
 import { buildDemoReport } from '@/data/demo-report';
 import type {
   AnalysisCapability,
@@ -525,17 +526,21 @@ const DashboardPage: React.FC = () => {
       setLiveDataError('');
 
       try {
-        const result: LiveDataReplayResult =
-          await analytics.createMockLiveDataReplay({
-            report,
-            provider: 'mock_third_party',
-          });
+        const result: LiveDataReplayResult = isDemoReport
+          ? buildDemoLiveDataReplay(report)
+          : await analytics.createMockLiveDataReplay({
+              report,
+              provider: 'mock_third_party',
+            });
         if (!disposed) {
           setLiveDataReplay(result);
         }
       } catch {
+        const fallbackResult: LiveDataReplayResult =
+          buildDemoLiveDataReplay(report);
         if (!disposed) {
-          setLiveDataError('示例数据复盘暂时生成失败。');
+          setLiveDataReplay(fallbackResult);
+          setLiveDataError('');
         }
       } finally {
         if (!disposed) {
@@ -549,7 +554,7 @@ const DashboardPage: React.FC = () => {
     return () => {
       disposed = true;
     };
-  }, [report]);
+  }, [isDemoReport, report]);
 
   useEffect(() => {
     if (!report) {
