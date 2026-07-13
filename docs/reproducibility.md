@@ -28,6 +28,9 @@ npm ci --ignore-scripts
 # 创建 .env.local，下载固定版本录制器并安装 Python 依赖
 npm run setup:local
 
+# 在 .env.local 填写 SUDA_DATABASE_URL，并初始化账号与历史报告表
+psql '你的 PostgreSQL 连接地址' -f server/database/migrations/002_standalone_auth_history.sql
+
 # 填写自己的云服务密钥后，独立启动前后端
 npm run dev:standalone
 ```
@@ -38,6 +41,7 @@ npm run dev:standalone
 
 ```bash
 cp .env.example .env.local
+psql '你的 PostgreSQL 连接地址' -f server/database/migrations/002_standalone_auth_history.sql
 npm run dev:standalone
 ```
 

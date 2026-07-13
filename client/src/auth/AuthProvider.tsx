@@ -87,7 +87,9 @@ const AccountForm: React.FC<AccountFormProps> = ({
       setErrorMessage(
         getErrorMessage(
           error,
-          initialized ? '登录没有成功，请重新检查。' : '账号创建没有成功，请重试。',
+          initialized
+            ? '登录没有成功，请重新检查。'
+            : '账号创建没有成功，请重试。',
         ),
       );
     } finally {
@@ -104,21 +106,15 @@ const AccountForm: React.FC<AccountFormProps> = ({
           </div>
           <div>
             <p className="font-semibold">AI 知识付费直播复盘</p>
-            <p className="mt-0.5 text-xs text-muted-foreground">
-              每个主播只看自己的复盘记录
-            </p>
           </div>
         </div>
         <div className="max-w-xl">
           <ShieldCheck className="size-8 text-primary" />
           <h1 className="mt-5 text-3xl font-semibold tracking-normal">
-            把每一场直播，变成下一场能用的经验
+            播后不复盘，直播就是背稿子
           </h1>
-          <p className="mt-4 max-w-lg text-sm leading-7 text-muted-foreground">
-            登录后可以继续分析新直播，也可以随时回看自己之前的风险、节奏和整改建议。
-          </p>
         </div>
-        <p className="text-xs text-muted-foreground">内部主播账号登录</p>
+        <div />
       </section>
 
       <section className="flex items-center justify-center px-5 py-12 sm:px-10">
@@ -135,11 +131,11 @@ const AccountForm: React.FC<AccountFormProps> = ({
           <h2 className="mt-5 text-2xl font-semibold tracking-normal">
             {initialized ? '登录主播复盘台' : '创建第一个管理账号'}
           </h2>
-          <p className="mt-2 text-sm leading-6 text-muted-foreground">
-            {initialized
-              ? '使用内部账号登录，不需要手机号。'
-              : '第一次使用只需设置一次，创建后会自动登录。'}
-          </p>
+          {!initialized ? (
+            <p className="mt-2 text-sm leading-6 text-muted-foreground">
+              第一次使用只需设置一次，创建后会自动登录。
+            </p>
+          ) : null}
 
           {errorMessage ? (
             <Alert variant="destructive" className="mt-5">
@@ -211,7 +207,9 @@ const AccountForm: React.FC<AccountFormProps> = ({
   );
 };
 
-export const AuthProvider: React.FC<React.PropsWithChildren> = ({ children }) => {
+export const AuthProvider: React.FC<React.PropsWithChildren> = ({
+  children,
+}) => {
   const [status, setStatus] = useState<AuthStatusResponse | null>(null);
   const [loadError, setLoadError] = useState<string>('');
 
@@ -253,7 +251,11 @@ export const AuthProvider: React.FC<React.PropsWithChildren> = ({ children }) =>
         <div className="max-w-sm text-center">
           <p className="text-lg font-semibold">暂时无法打开账号服务</p>
           <p className="mt-2 text-sm text-muted-foreground">{loadError}</p>
-          <Button className="mt-5" variant="outline" onClick={() => void loadStatus()}>
+          <Button
+            className="mt-5"
+            variant="outline"
+            onClick={() => void loadStatus()}
+          >
             <RefreshCw className="size-4" />
             重新加载
           </Button>
@@ -278,9 +280,7 @@ export const AuthProvider: React.FC<React.PropsWithChildren> = ({ children }) =>
   }
 
   return (
-    <AuthContext.Provider value={contextValue}>
-      {children}
-    </AuthContext.Provider>
+    <AuthContext.Provider value={contextValue}>{children}</AuthContext.Provider>
   );
 };
 

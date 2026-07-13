@@ -352,11 +352,24 @@ const getFeishuResultMessage = (result: FeishuSyncResult): string => {
 };
 
 const copyText = async (text: string): Promise<boolean> => {
-  if (!navigator.clipboard) {
-    return false;
+  const textarea: HTMLTextAreaElement = document.createElement('textarea');
+  textarea.value = text;
+  textarea.setAttribute('readonly', '');
+  textarea.style.position = 'fixed';
+  textarea.style.opacity = '0';
+  document.body.appendChild(textarea);
+  textarea.select();
+  const copied: boolean = document.execCommand('copy');
+  document.body.removeChild(textarea);
+  if (copied) {
+    return true;
   }
-  await navigator.clipboard.writeText(text);
-  return true;
+
+  if (navigator.clipboard) {
+    await navigator.clipboard.writeText(text);
+    return true;
+  }
+  return false;
 };
 
 const wait = (milliseconds: number): Promise<void> =>
@@ -1449,15 +1462,19 @@ const DashboardPage: React.FC = () => {
               {report.transcriptSegments.length} 个时间轴片段
               {historicalDetail ? (
                 <>
-                  {' '}· {historicalDetail.owner.displayName} ·{' '}
-                  {new Date(historicalDetail.createdAt).toLocaleString('zh-CN', {
-                    year: 'numeric',
-                    month: '2-digit',
-                    day: '2-digit',
-                    hour: '2-digit',
-                    minute: '2-digit',
-                    hour12: false,
-                  })}
+                  {' '}
+                  · {historicalDetail.owner.displayName} ·{' '}
+                  {new Date(historicalDetail.createdAt).toLocaleString(
+                    'zh-CN',
+                    {
+                      year: 'numeric',
+                      month: '2-digit',
+                      day: '2-digit',
+                      hour: '2-digit',
+                      minute: '2-digit',
+                      hour12: false,
+                    },
+                  )}
                 </>
               ) : null}
             </p>

@@ -128,7 +128,11 @@ export class AuthService {
     const session: SessionDocument | undefined = sessionRow
       ? this.parseDocument<SessionDocument>(sessionRow.content)
       : undefined;
-    if (!sessionRow || !session || Date.parse(session.expiresAt) <= Date.now()) {
+    if (
+      !sessionRow ||
+      !session ||
+      Date.parse(session.expiresAt) <= Date.now()
+    ) {
       if (sessionRow) {
         await this.db
           .delete(ruleDocuments)
@@ -190,7 +194,9 @@ export class AuthService {
     });
   }
 
-  async listAccounts(operator: InternalUser): Promise<InternalAccountSummary[]> {
+  async listAccounts(
+    operator: InternalUser,
+  ): Promise<InternalAccountSummary[]> {
     if (operator.role !== 'admin') {
       throw new BusinessException(
         ResponseCode.FORBIDDEN,
@@ -264,7 +270,10 @@ export class AuthService {
     return rows[0];
   }
 
-  private async createSession(user: InternalUser): Promise<AuthenticatedAccount> {
+  private async createSession(
+    user: InternalUser,
+  ): Promise<AuthenticatedAccount> {
+    const id: string = randomUUID();
     const token: string = randomBytes(32).toString('hex');
     const tokenHash: string = this.hashToken(token);
     const session: SessionDocument = {
@@ -272,6 +281,7 @@ export class AuthService {
       expiresAt: new Date(Date.now() + AUTH_SESSION_TTL_MS).toISOString(),
     };
     await this.db.insert(ruleDocuments).values({
+      id,
       title: tokenHash,
       sourceUrl: `internal://sessions/${tokenHash}`,
       sourceType: SESSION_SOURCE_TYPE,
@@ -333,7 +343,9 @@ export class AuthService {
       'hex',
     );
     const expected: Buffer = Buffer.from(expectedHash, 'hex');
-    return actual.length === expected.length && timingSafeEqual(actual, expected);
+    return (
+      actual.length === expected.length && timingSafeEqual(actual, expected)
+    );
   }
 
   private hashToken(token: string): string {
