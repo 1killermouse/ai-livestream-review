@@ -41,12 +41,7 @@ import {
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import {
   ChartContainer,
   ChartLegend,
@@ -95,11 +90,13 @@ interface OutcomeItem {
 interface AnalysisProgressProps {
   mode: AnalysisMode;
   progress: number;
+  uploading: boolean;
 }
 
 const DEFAULT_FRAMEWORK_NAME = 'AI 知识付费直播全场转化框架';
 const ANALYSIS_JOB_POLL_INTERVAL_MS = 2000;
 const ANALYSIS_JOB_MAX_ATTEMPTS = 300;
+const MAX_RECORDING_FILE_SIZE_BYTES = 2 * 1024 * 1024 * 1024;
 
 const outcomeItems: OutcomeItem[] = [
   {
@@ -379,6 +376,7 @@ const wait = (milliseconds: number): Promise<void> =>
 const AnalysisProgress: React.FC<AnalysisProgressProps> = ({
   mode,
   progress,
+  uploading,
 }) => {
   const stages: string[] = [
     '准备直播文件',
@@ -388,8 +386,9 @@ const AnalysisProgress: React.FC<AnalysisProgressProps> = ({
   ];
   const activeStage: number =
     progress < 32 ? 0 : progress < 58 ? 1 : progress < 82 ? 2 : 3;
-  const modeLabel: string =
-    mode === 'demo'
+  const modeLabel: string = uploading
+    ? '正在分片上传直播录屏'
+    : mode === 'demo'
       ? '正在准备完整示例报告'
       : mode === 'captured'
         ? '正在复盘刚刚录制的直播'
@@ -448,6 +447,7 @@ const DashboardPage: React.FC = () => {
   const [loadingHistoricalReport, setLoadingHistoricalReport] =
     useState<boolean>(Boolean(historicalReportId));
   const [submitting, setSubmitting] = useState<boolean>(false);
+  const [uploadingRecording, setUploadingRecording] = useState<boolean>(false);
   const [analysisMode, setAnalysisMode] = useState<AnalysisMode>(null);
   const [progress, setProgress] = useState<number>(0);
   const [errorMessage, setErrorMessage] = useState<string>('');
@@ -544,7 +544,7 @@ const DashboardPage: React.FC = () => {
   }, [historicalReportId]);
 
   useEffect(() => {
-    if (!submitting) {
+    if (!submitting || uploadingRecording) {
       return undefined;
     }
     const timer: number = window.setInterval(() => {
@@ -557,7 +557,7 @@ const DashboardPage: React.FC = () => {
       });
     }, 700);
     return () => window.clearInterval(timer);
-  }, [submitting]);
+  }, [submitting, uploadingRecording]);
 
   useEffect(() => {
     if (captureResult?.status !== 'recording') {
@@ -794,13 +794,20 @@ const DashboardPage: React.FC = () => {
     }
 
     setSubmitting(true);
+    setUploadingRecording(true);
     setAnalysisMode('upload');
-    setProgress(12);
+    setProgress(8);
     setErrorMessage('');
 
     try {
       const uploadResult: BrowserRecordingUploadResult =
-        await storage.uploadRecordingFile(selectedRecordingFile);
+        await storage.uploadRecordingFile(
+          selectedRecordingFile,
+          (uploadPercentage: number) => {
+            setProgress(8 + Math.round(uploadPercentage * 0.34));
+          },
+        );
+      setUploadingRecording(false);
       setProgress(42);
       const result: PrototypeAnalysisReport =
         await createReportFromFileInBackground({
@@ -814,6 +821,7 @@ const DashboardPage: React.FC = () => {
     } catch {
       setErrorMessage('录屏上传或识别失败，请检查文件格式和网络后再试。');
     } finally {
+      setUploadingRecording(false);
       setSubmitting(false);
       setAnalysisMode(null);
     }
@@ -1299,6 +1307,13 @@ const DashboardPage: React.FC = () => {
                   accept="video/*,audio/*"
                   onChange={(event: React.ChangeEvent<HTMLInputElement>) => {
                     const file: File | undefined = event.target.files?.[0];
+                    if (file && file.size > MAX_RECORDING_FILE_SIZE_BYTES) {
+                      setSelectedRecordingFile(null);
+                      setRecordingName('');
+                      setErrorMessage('单个录屏文件不能超过 2 GB。');
+                      event.target.value = '';
+                      return;
+                    }
                     setSelectedRecordingFile(file || null);
                     setRecordingName(file?.name || '');
                     setErrorMessage('');
@@ -1411,7 +1426,11 @@ const DashboardPage: React.FC = () => {
             </div>
 
             {submitting ? (
-              <AnalysisProgress mode={analysisMode} progress={progress} />
+              <AnalysisProgress
+                mode={analysisMode}
+                progress={progress}
+                uploading={uploadingRecording}
+              />
             ) : null}
           </CardContent>
         </Card>

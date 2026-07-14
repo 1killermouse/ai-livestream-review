@@ -201,6 +201,28 @@ export interface BrowserRecordingUploadResult extends OssUploadResult {
   sizeBytes: number;
 }
 
+export interface MultipartUploadInitRequest {
+  fileName: string;
+  sizeBytes: number;
+  contentType?: string;
+}
+
+export interface MultipartUploadInitResult {
+  uploadId: string;
+  chunkSizeBytes: number;
+  totalParts: number;
+  maxFileSizeBytes: number;
+}
+
+export interface MultipartUploadPartResult {
+  partNumber: number;
+  uploadedBytes: number;
+}
+
+export interface MultipartUploadCompleteRequest {
+  uploadId: string;
+}
+
 export interface TranscriptSegmentSummary {
   id: string;
   startSeconds: number;
