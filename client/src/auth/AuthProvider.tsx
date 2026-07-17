@@ -7,7 +7,16 @@ import React, {
   useState,
 } from 'react';
 import type { AxiosError } from 'axios';
-import { KeyRound, RefreshCw, ShieldCheck } from 'lucide-react';
+import {
+  BarChart3,
+  Eye,
+  EyeOff,
+  KeyRound,
+  RefreshCw,
+  ShieldAlert,
+  ShieldCheck,
+  WandSparkles,
+} from 'lucide-react';
 
 import { auth } from '@/api';
 import { Alert, AlertDescription } from '@/components/ui/alert';
@@ -64,6 +73,7 @@ const AccountForm: React.FC<AccountFormProps> = ({
   const [username, setUsername] = useState<string>('');
   const [displayName, setDisplayName] = useState<string>('');
   const [password, setPassword] = useState<string>('');
+  const [showPassword, setShowPassword] = useState<boolean>(false);
   const [submitting, setSubmitting] = useState<boolean>(false);
   const [errorMessage, setErrorMessage] = useState<string>('');
 
@@ -98,10 +108,10 @@ const AccountForm: React.FC<AccountFormProps> = ({
   };
 
   return (
-    <main className="grid min-h-screen bg-background text-foreground lg:grid-cols-[minmax(0,1fr)_minmax(28rem,38rem)]">
-      <section className="hidden border-r border-border bg-muted/20 p-12 lg:flex lg:flex-col lg:justify-between">
+    <main className="grid min-h-dvh bg-background text-foreground lg:grid-cols-[minmax(0,1fr)_minmax(28rem,36rem)]">
+      <section className="hidden bg-foreground p-12 text-background lg:flex lg:flex-col lg:justify-between xl:p-16">
         <div className="flex items-center gap-3">
-          <div className="flex size-10 items-center justify-center rounded-md bg-foreground font-semibold text-background">
+          <div className="flex size-10 items-center justify-center rounded-md bg-primary font-semibold text-primary-foreground">
             复
           </div>
           <div>
@@ -110,9 +120,26 @@ const AccountForm: React.FC<AccountFormProps> = ({
         </div>
         <div className="max-w-xl">
           <ShieldCheck className="size-8 text-primary" />
-          <h1 className="mt-5 text-3xl font-semibold tracking-normal">
+          <h1 className="mt-6 text-4xl font-semibold leading-tight tracking-normal">
             播后不复盘，直播就是背稿子
           </h1>
+          <div className="mt-10 grid grid-cols-3 gap-3">
+            {[
+              { icon: ShieldAlert, label: '风险原话' },
+              { icon: BarChart3, label: '节奏复盘' },
+              { icon: WandSparkles, label: '可播改稿' },
+            ].map((item) => (
+              <div
+                key={item.label}
+                className="border-t border-background/20 pt-4"
+              >
+                <item.icon className="size-5 text-primary" />
+                <p className="mt-3 text-sm font-medium text-background/90">
+                  {item.label}
+                </p>
+              </div>
+            ))}
+          </div>
         </div>
         <div />
       </section>
@@ -125,7 +152,7 @@ const AccountForm: React.FC<AccountFormProps> = ({
             </div>
             <p className="text-sm font-semibold">AI 知识付费直播复盘</p>
           </div>
-          <div className="flex size-10 items-center justify-center rounded-md bg-primary/10 text-primary">
+          <div className="flex size-11 items-center justify-center rounded-md bg-accent text-accent-foreground">
             <KeyRound className="size-5" />
           </div>
           <h2 className="mt-5 text-2xl font-semibold tracking-normal">
@@ -174,19 +201,41 @@ const AccountForm: React.FC<AccountFormProps> = ({
               <label className="text-sm font-medium" htmlFor="password">
                 登录密码
               </label>
-              <Input
-                id="password"
-                type="password"
-                value={password}
-                autoComplete={initialized ? 'current-password' : 'new-password'}
-                minLength={8}
-                maxLength={128}
-                required
-                onChange={(event) => setPassword(event.target.value)}
-                placeholder="至少 8 位"
-              />
+              <div className="relative">
+                <Input
+                  id="password"
+                  className="pr-12"
+                  type={showPassword ? 'text' : 'password'}
+                  value={password}
+                  autoComplete={
+                    initialized ? 'current-password' : 'new-password'
+                  }
+                  minLength={8}
+                  maxLength={128}
+                  required
+                  onChange={(event) => setPassword(event.target.value)}
+                  placeholder="至少 8 位"
+                />
+                <button
+                  type="button"
+                  className="absolute right-0 top-0 flex size-11 cursor-pointer items-center justify-center rounded-md text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-ring/20"
+                  aria-label={showPassword ? '隐藏密码' : '显示密码'}
+                  title={showPassword ? '隐藏密码' : '显示密码'}
+                  onClick={() => setShowPassword((current) => !current)}
+                >
+                  {showPassword ? (
+                    <EyeOff className="size-4" />
+                  ) : (
+                    <Eye className="size-4" />
+                  )}
+                </button>
+              </div>
             </div>
-            <Button className="w-full" type="submit" disabled={submitting}>
+            <Button
+              className="min-h-11 w-full"
+              type="submit"
+              disabled={submitting}
+            >
               {submitting
                 ? initialized
                   ? '正在登录'

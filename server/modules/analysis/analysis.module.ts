@@ -9,6 +9,7 @@ import { AnalysisService } from './analysis.service';
 import { DeepSeekAnalysisService } from './deepseek-analysis.service';
 import { LiveScriptPolicyProvider } from './live-script-policy.provider';
 import { RagKnowledgeProvider } from './rag-knowledge.provider';
+import { ReportReactAgentService } from './report-react-agent.service';
 
 @Module({
   imports: [HistoryModule],
@@ -20,6 +21,7 @@ import { RagKnowledgeProvider } from './rag-knowledge.provider';
     DeepSeekAnalysisService,
     LiveScriptPolicyProvider,
     RagKnowledgeProvider,
+    ReportReactAgentService,
   ],
 })
 export class AnalysisModule {}

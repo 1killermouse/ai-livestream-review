@@ -26,6 +26,7 @@ import { DeepSeekAnalysisService } from './deepseek-analysis.service';
 import type { DomainPolicyProvider } from './domain-policy.interface';
 import { LiveScriptPolicyProvider } from './live-script-policy.provider';
 import { RagKnowledgeProvider } from './rag-knowledge.provider';
+import { ReportReactAgentService } from './report-react-agent.service';
 import { HistoryService } from '../history/history.service';
 
 const AnalysisState = Annotation.Root({
@@ -83,6 +84,7 @@ export class AnalysisService {
     private readonly aliyunAsrService: AliyunAsrService,
     private readonly ragKnowledgeProvider: RagKnowledgeProvider,
     private readonly deepSeekAnalysisService: DeepSeekAnalysisService,
+    private readonly reportReactAgentService: ReportReactAgentService,
     private readonly historyService: HistoryService,
   ) {}
 
@@ -255,18 +257,12 @@ export class AnalysisService {
 
     const relatedSegments: TranscriptSegmentSummary[] =
       this.findRelatedSegments(request.report.transcriptSegments, question);
-    const answer: string =
-      await this.deepSeekAnalysisService.answerReportQuestion({
-        report: request.report,
-        question,
-        messages: request.messages || [],
-        relatedSegments,
-      });
-
-    return {
-      answer,
-      relatedSegments,
-    };
+    return this.reportReactAgentService.answer({
+      report: request.report,
+      question,
+      messages: request.messages || [],
+      fallbackSegments: relatedSegments,
+    });
   }
 
   getDomainPolicy(): DomainPolicyProvider {

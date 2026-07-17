@@ -63,7 +63,9 @@ export class AliyunAsrService {
     return process.env.ALIYUN_ASR_MODEL || 'paraformer-v2';
   }
 
-  async transcribeFileUrl(fileUrl: string): Promise<TranscriptSegmentSummary[]> {
+  async transcribeFileUrl(
+    fileUrl: string,
+  ): Promise<TranscriptSegmentSummary[]> {
     const taskId: string = await this.submitTranscriptionTask(fileUrl);
     const transcriptionUrl: string = await this.waitForTranscriptionUrl(taskId);
     const response: AxiosResponse<AliyunTranscriptionJson> =
@@ -145,13 +147,8 @@ export class AliyunAsrService {
         Boolean(sentence.text?.trim()),
       )
       .map(
-        (
-          sentence: AliyunSentence,
-          index: number,
-        ): TranscriptSegmentSummary => {
-          const startSeconds: number = this.toStartSeconds(
-            sentence.begin_time,
-          );
+        (sentence: AliyunSentence, index: number): TranscriptSegmentSummary => {
+          const startSeconds: number = this.toStartSeconds(sentence.begin_time);
           const endSeconds: number = this.toEndSeconds(
             sentence.end_time,
             startSeconds,
@@ -197,7 +194,7 @@ export class AliyunAsrService {
             {
               begin_time: 224000,
               end_time: 326000,
-              text: '如果有人跟你说一键生成爆款内容，保证你一个月用AI变现，或者0基础小白七天接单回本，这种说法就要谨慎。',
+              text: '跟着我这套训练营做，一键生成爆款内容，保证你一个月用AI变现，0基础小白七天就能接单回本。',
               sentence_id: 4,
             },
           ],
@@ -213,7 +210,10 @@ export class AliyunAsrService {
     return Math.max(0, Math.floor(value / 1000));
   }
 
-  private toEndSeconds(value: number | undefined, startSeconds: number): number {
+  private toEndSeconds(
+    value: number | undefined,
+    startSeconds: number,
+  ): number {
     if (typeof value !== 'number' || Number.isNaN(value)) {
       return startSeconds + 1;
     }
@@ -221,9 +221,8 @@ export class AliyunAsrService {
   }
 
   private countTextUnits(text: string): number {
-    const chineseChars: RegExpMatchArray | null = text.match(
-      /[\u4e00-\u9fff]/g,
-    );
+    const chineseChars: RegExpMatchArray | null =
+      text.match(/[\u4e00-\u9fff]/g);
     const latinTokens: RegExpMatchArray | null = text.match(/[a-zA-Z0-9]+/g);
     return (chineseChars?.length || 0) + (latinTokens?.length || 0);
   }

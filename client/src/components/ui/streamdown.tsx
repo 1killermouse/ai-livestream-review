@@ -162,9 +162,17 @@ const defaultComponents: NonNullable<
   section: ({ className, ...props }) => (
     <section className={cn(className)} {...omit(props, ['node'])} />
   ),
-  img: ({ className, alt, ...props }) => (
-    <img className={cn(className)} alt={alt ?? ''} {...omit(props, ['node'])} />
-  ),
+  img: ({ className, alt, src, ...props }) =>
+    src ? (
+      <img
+        className={cn(className)}
+        alt={alt ?? ''}
+        src={src}
+        loading="lazy"
+        decoding="async"
+        {...omit(props, ['node'])}
+      />
+    ) : null,
   pre: ({ children }) => <div className="not-prose">{children}</div>,
 };
 
@@ -175,10 +183,7 @@ export function Streamdown({
 }: React.ComponentProps<typeof StreamdownPrimitive>) {
   return (
     <StreamdownPrimitive
-      className={cn(
-        'prose max-w-none dark:prose-invert',
-        className,
-      )}
+      className={cn('prose max-w-none dark:prose-invert', className)}
       components={{ ...defaultComponents, ...components }}
       {...props}
     />

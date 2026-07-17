@@ -5,6 +5,7 @@ import { AnalysisService } from './analysis.service';
 import { DeepSeekAnalysisService } from './deepseek-analysis.service';
 import { LiveScriptPolicyProvider } from './live-script-policy.provider';
 import { RagKnowledgeProvider } from './rag-knowledge.provider';
+import { ReportReactAgentService } from './report-react-agent.service';
 import { HistoryService } from '../history/history.service';
 
 describe('AnalysisService', () => {
@@ -40,14 +41,18 @@ describe('AnalysisService', () => {
       aliyunAsrService,
       ragKnowledgeProvider,
       deepSeekAnalysisService,
+      {} as ReportReactAgentService,
       historyService,
     );
 
-    const startedJob = service.startFileAnalysisJob({
-      inputSource: 'recording_upload',
-      recordingName: '测试录屏.mp4',
-      fileUrl: 'https://example.com/test.mp4',
-    }, 'anchor-1');
+    const startedJob = service.startFileAnalysisJob(
+      {
+        inputSource: 'recording_upload',
+        recordingName: '测试录屏.mp4',
+        fileUrl: 'https://example.com/test.mp4',
+      },
+      'anchor-1',
+    );
 
     expect(startedJob).toMatchObject({
       status: 'processing',

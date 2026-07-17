@@ -10,7 +10,6 @@ import {
   Copy,
   FileCheck2,
   FileText,
-  Gauge,
   LayoutDashboard,
   Link2,
   ListChecks,
@@ -82,11 +81,6 @@ import type {
 type AnalysisMode = 'demo' | 'upload' | 'captured' | null;
 type ReportView = 'overview' | 'risks' | 'rhythm' | 'data' | 'rewrite' | 'chat';
 
-interface OutcomeItem {
-  label: string;
-  icon: React.ReactNode;
-}
-
 interface AnalysisProgressProps {
   mode: AnalysisMode;
   progress: number;
@@ -97,33 +91,6 @@ const DEFAULT_FRAMEWORK_NAME = 'AI 知识付费直播全场转化框架';
 const ANALYSIS_JOB_POLL_INTERVAL_MS = 2000;
 const ANALYSIS_JOB_MAX_ATTEMPTS = 300;
 const MAX_RECORDING_FILE_SIZE_BYTES = 2 * 1024 * 1024 * 1024;
-
-const outcomeItems: OutcomeItem[] = [
-  {
-    label: '带时间点逐字稿',
-    icon: <Clock3 className="size-4" />,
-  },
-  {
-    label: '违禁与语义风险',
-    icon: <ShieldAlert className="size-4" />,
-  },
-  {
-    label: '直播节奏对照',
-    icon: <Gauge className="size-4" />,
-  },
-  {
-    label: '数据波动复盘',
-    icon: <BarChart3 className="size-4" />,
-  },
-  {
-    label: '可直接照读的改稿',
-    icon: <WandSparkles className="size-4" />,
-  },
-  {
-    label: '追问与飞书同步',
-    icon: <MessageSquareText className="size-4" />,
-  },
-];
 
 const liveDataChartConfig = {
   onlineUsers: {
@@ -1042,25 +1009,27 @@ const DashboardPage: React.FC = () => {
 
   if (!report) {
     return (
-      <main className="mx-auto w-full max-w-7xl space-y-7 px-4 py-8 sm:px-6 lg:px-8">
-        <section className="border-b border-border pb-7">
-          <div className="flex flex-col justify-between gap-5 lg:flex-row lg:items-start">
+      <main className="mx-auto w-full max-w-7xl space-y-6 px-4 py-7 sm:px-6 lg:px-8">
+        <section className="border-b border-border pb-6">
+          <div className="flex flex-col justify-between gap-5 lg:flex-row lg:items-end">
             <div className="max-w-3xl">
-              <div className="flex flex-wrap items-center gap-2">
-                <Badge variant="secondary">AI 知识付费直播</Badge>
-                <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                  <span
-                    className={
-                      'size-2 rounded-full ' +
-                      (capability?.configured ? 'bg-success' : 'bg-warning')
-                    }
-                  />
-                  {capability?.configured ? '可以开始复盘' : '服务状态待确认'}
-                </span>
+              <div className="flex flex-wrap items-center gap-3">
+                <h1 className="text-3xl font-semibold tracking-normal sm:text-4xl">
+                  开始一场直播复盘
+                </h1>
+                {capability && !capability.configured ? (
+                  <Badge
+                    variant="outline"
+                    className="border-warning/35 text-warning"
+                  >
+                    <span className="mr-1.5 size-1.5 rounded-full bg-warning" />
+                    服务待确认
+                  </Badge>
+                ) : null}
               </div>
-              <h1 className="mt-4 text-3xl font-semibold tracking-normal sm:text-4xl">
-                AI 知识付费直播复盘
-              </h1>
+              <p className="mt-3 text-base font-medium text-foreground/80">
+                播后不复盘，直播就是背稿子
+              </p>
             </div>
             <Button
               type="button"
@@ -1075,16 +1044,19 @@ const DashboardPage: React.FC = () => {
             </Button>
           </div>
 
-          <div className="mt-6 flex flex-wrap gap-2">
-            {outcomeItems.map((item: OutcomeItem) => (
-              <div
-                key={item.label}
-                className="flex items-center gap-2 rounded-md border border-border bg-background px-3 py-2 text-xs text-muted-foreground"
-              >
-                <span className="text-primary">{item.icon}</span>
-                <span>{item.label}</span>
-              </div>
-            ))}
+          <div className="mt-5 flex flex-wrap gap-x-6 gap-y-3 text-sm font-medium">
+            <span className="flex items-center gap-2">
+              <ShieldAlert className="size-4 text-destructive" />
+              风险整改
+            </span>
+            <span className="flex items-center gap-2">
+              <Clock3 className="size-4 text-primary" />
+              节奏复盘
+            </span>
+            <span className="flex items-center gap-2">
+              <WandSparkles className="size-4 text-success" />
+              可播改稿
+            </span>
           </div>
         </section>
 
@@ -1096,341 +1068,354 @@ const DashboardPage: React.FC = () => {
           </Alert>
         ) : null}
 
-        <Card className="overflow-hidden rounded-lg">
-          <CardHeader className="border-b border-border bg-muted/20">
+        <Card className="overflow-hidden">
+          <CardHeader className="border-b border-border bg-card px-5 py-5 sm:px-6">
             <div className="flex items-start gap-3">
-              <div className="flex size-9 shrink-0 items-center justify-center rounded-md bg-primary text-primary-foreground">
+              <div className="flex size-10 shrink-0 items-center justify-center rounded-md bg-accent text-accent-foreground">
                 <Video className="size-4" />
               </div>
               <div>
                 <CardTitle className="text-xl tracking-normal">
-                  提交一场直播
+                  选择直播来源
                 </CardTitle>
               </div>
             </div>
           </CardHeader>
-          <CardContent className="space-y-6 p-5 sm:p-6">
-            <Tabs
-              value={inputSource}
-              onValueChange={(value: string) => {
-                setInputSource(value as InputSource);
-                setErrorMessage('');
-              }}
-            >
-              <TabsList className="grid h-auto w-full grid-cols-2 rounded-lg p-1 sm:w-[26rem]">
-                <TabsTrigger className="min-h-10" value="live_url">
-                  <Link2 className="size-4" />
-                  直播正在进行
-                </TabsTrigger>
-                <TabsTrigger className="min-h-10" value="recording_upload">
-                  <Upload className="size-4" />
-                  我已有录屏
-                </TabsTrigger>
-              </TabsList>
+          <CardContent className="p-0">
+            <div className="grid lg:grid-cols-[minmax(0,1fr)_21rem]">
+              <div className="min-w-0 p-5 sm:p-6">
+                <Tabs
+                  value={inputSource}
+                  onValueChange={(value: string) => {
+                    setInputSource(value as InputSource);
+                    setErrorMessage('');
+                  }}
+                >
+                  <TabsList className="grid h-auto w-full grid-cols-2 rounded-lg p-1 sm:w-[28rem]">
+                    <TabsTrigger className="min-h-11" value="live_url">
+                      <Link2 className="size-4" />
+                      直播正在进行
+                    </TabsTrigger>
+                    <TabsTrigger className="min-h-11" value="recording_upload">
+                      <Upload className="size-4" />
+                      我已有录屏
+                    </TabsTrigger>
+                  </TabsList>
 
-              <TabsContent value="live_url" className="mt-5 space-y-4">
-                <div className="space-y-2">
-                  <label
-                    className="text-sm font-medium"
-                    htmlFor="live-room-url"
+                  <TabsContent value="live_url" className="mt-5 space-y-4">
+                    <div className="space-y-2">
+                      <label
+                        className="text-sm font-medium"
+                        htmlFor="live-room-url"
+                      >
+                        直播间链接
+                      </label>
+                      <div className="flex flex-col gap-3 md:flex-row">
+                        <Input
+                          id="live-room-url"
+                          value={liveUrl}
+                          disabled={Boolean(captureResult) || startingRecording}
+                          onChange={(
+                            event: React.ChangeEvent<HTMLInputElement>,
+                          ) => {
+                            setLiveUrl(event.target.value);
+                            setErrorMessage('');
+                          }}
+                          placeholder="粘贴抖音直播间链接"
+                        />
+                        {captureResult?.status !== 'recording' &&
+                        captureResult?.status !== 'completed' ? (
+                          <Button
+                            type="button"
+                            className="md:min-w-36"
+                            disabled={!canCapture}
+                            onClick={() => {
+                              void handleStartRecording();
+                            }}
+                          >
+                            <CircleDot className="size-4" />
+                            {startingRecording ? '正在启动' : '开始录制'}
+                          </Button>
+                        ) : null}
+                      </div>
+                    </div>
+
+                    {captureResult ? (
+                      <div className="rounded-lg border border-border p-4 sm:p-5">
+                        <div className="flex flex-wrap items-center justify-between gap-3">
+                          <div className="flex items-center gap-2">
+                            <Badge
+                              variant={captureStatusVariant(
+                                captureResult.status,
+                              )}
+                            >
+                              {captureStatusLabel(captureResult.status)}
+                            </Badge>
+                            {captureResult.status === 'recording' ? (
+                              <span className="text-xs text-muted-foreground">
+                                已开始于{' '}
+                                {new Date(
+                                  captureResult.startedAt,
+                                ).toLocaleTimeString('zh-CN', {
+                                  hour: '2-digit',
+                                  minute: '2-digit',
+                                })}
+                              </span>
+                            ) : null}
+                          </div>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            disabled={refreshingCapture || submitting}
+                            onClick={() => {
+                              void refreshCaptureStatus(captureResult.id);
+                            }}
+                          >
+                            <RefreshCw className="size-3" />
+                            {refreshingCapture ? '刷新中' : '刷新状态'}
+                          </Button>
+                        </div>
+
+                        {captureResult.status === 'recording' ? (
+                          <div className="mt-4">
+                            <p className="text-sm leading-6">
+                              正在持续保存这场直播。主播下播后，状态会自动变成“录制完成”。
+                            </p>
+                            <div className="mt-4 flex items-center gap-3">
+                              <span className="relative flex size-3">
+                                <span className="absolute inline-flex size-full animate-ping rounded-full bg-destructive/60" />
+                                <span className="relative inline-flex size-3 rounded-full bg-destructive" />
+                              </span>
+                              <span className="text-xs text-muted-foreground">
+                                后台录制中，每 8 秒自动检查一次
+                              </span>
+                            </div>
+                          </div>
+                        ) : null}
+
+                        {captureResult.status === 'completed' ? (
+                          <div className="mt-4 space-y-3">
+                            <div>
+                              <p className="text-sm font-medium">
+                                录屏已经保存，可以开始复盘
+                              </p>
+                            </div>
+                            {captureResult.files.length > 0 ? (
+                              captureResult.files.map((file) => (
+                                <div
+                                  key={file.path}
+                                  className="flex flex-col justify-between gap-3 rounded-md bg-muted/40 p-3 sm:flex-row sm:items-center"
+                                >
+                                  <div className="min-w-0">
+                                    <p className="truncate text-sm font-medium">
+                                      {file.name}
+                                    </p>
+                                    <p className="mt-1 text-xs text-muted-foreground">
+                                      {formatFileSize(file.sizeBytes)}
+                                    </p>
+                                  </div>
+                                  <Button
+                                    type="button"
+                                    size="sm"
+                                    disabled={submitting}
+                                    onClick={() => {
+                                      void handleAnalyzeCapturedFile(file.path);
+                                    }}
+                                  >
+                                    <WandSparkles className="size-3" />
+                                    {analyzingPath === file.path
+                                      ? '正在复盘'
+                                      : '开始复盘'}
+                                  </Button>
+                                </div>
+                              ))
+                            ) : (
+                              <Alert>
+                                <AlertTriangle className="size-4" />
+                                <AlertTitle>还没有找到录屏文件</AlertTitle>
+                                <AlertDescription>
+                                  稍等片刻后刷新状态；如果仍然没有文件，可以重新录制。
+                                </AlertDescription>
+                              </Alert>
+                            )}
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="ghost"
+                              disabled={submitting}
+                              onClick={() => {
+                                setCaptureResult(null);
+                              }}
+                            >
+                              <RotateCcw className="size-3" />
+                              重新录制
+                            </Button>
+                          </div>
+                        ) : null}
+
+                        {captureResult.status === 'failed' ? (
+                          <div className="mt-4">
+                            <p className="text-sm leading-6">
+                              这次没有拿到可用录屏。请确认主播正在直播，链接可以正常打开。
+                            </p>
+                            <Button
+                              type="button"
+                              className="mt-3"
+                              size="sm"
+                              variant="outline"
+                              onClick={() => setCaptureResult(null)}
+                            >
+                              <RotateCcw className="size-3" />
+                              重新尝试
+                            </Button>
+                          </div>
+                        ) : null}
+                      </div>
+                    ) : null}
+                  </TabsContent>
+
+                  <TabsContent
+                    value="recording_upload"
+                    className="mt-5 space-y-4"
                   >
-                    直播间链接
-                  </label>
-                  <div className="flex flex-col gap-3 md:flex-row">
-                    <Input
-                      id="live-room-url"
-                      value={liveUrl}
-                      disabled={Boolean(captureResult) || startingRecording}
+                    <input
+                      id="recording-file"
+                      className="sr-only"
+                      type="file"
+                      accept="video/*,audio/*"
                       onChange={(
                         event: React.ChangeEvent<HTMLInputElement>,
                       ) => {
-                        setLiveUrl(event.target.value);
+                        const file: File | undefined = event.target.files?.[0];
+                        if (file && file.size > MAX_RECORDING_FILE_SIZE_BYTES) {
+                          setSelectedRecordingFile(null);
+                          setRecordingName('');
+                          setErrorMessage('单个录屏文件不能超过 2 GB。');
+                          event.target.value = '';
+                          return;
+                        }
+                        setSelectedRecordingFile(file || null);
+                        setRecordingName(file?.name || '');
                         setErrorMessage('');
                       }}
-                      placeholder="粘贴抖音直播间链接"
                     />
-                    {captureResult?.status !== 'recording' &&
-                    captureResult?.status !== 'completed' ? (
-                      <Button
-                        type="button"
-                        className="md:min-w-36"
-                        disabled={!canCapture}
-                        onClick={() => {
-                          void handleStartRecording();
-                        }}
-                      >
-                        <CircleDot className="size-4" />
-                        {startingRecording ? '正在启动' : '开始录制'}
-                      </Button>
-                    ) : null}
-                  </div>
-                </div>
-
-                {captureResult ? (
-                  <div className="rounded-lg border border-border p-4 sm:p-5">
-                    <div className="flex flex-wrap items-center justify-between gap-3">
-                      <div className="flex items-center gap-2">
-                        <Badge
-                          variant={captureStatusVariant(captureResult.status)}
-                        >
-                          {captureStatusLabel(captureResult.status)}
-                        </Badge>
-                        {captureResult.status === 'recording' ? (
-                          <span className="text-xs text-muted-foreground">
-                            已开始于{' '}
-                            {new Date(
-                              captureResult.startedAt,
-                            ).toLocaleTimeString('zh-CN', {
-                              hour: '2-digit',
-                              minute: '2-digit',
-                            })}
-                          </span>
-                        ) : null}
-                      </div>
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="outline"
-                        disabled={refreshingCapture || submitting}
-                        onClick={() => {
-                          void refreshCaptureStatus(captureResult.id);
-                        }}
-                      >
-                        <RefreshCw className="size-3" />
-                        {refreshingCapture ? '刷新中' : '刷新状态'}
-                      </Button>
-                    </div>
-
-                    {captureResult.status === 'recording' ? (
-                      <div className="mt-4">
-                        <p className="text-sm leading-6">
-                          正在持续保存这场直播。主播下播后，状态会自动变成“录制完成”。
-                        </p>
-                        <div className="mt-4 flex items-center gap-3">
-                          <span className="relative flex size-3">
-                            <span className="absolute inline-flex size-full animate-ping rounded-full bg-destructive/60" />
-                            <span className="relative inline-flex size-3 rounded-full bg-destructive" />
-                          </span>
-                          <span className="text-xs text-muted-foreground">
-                            后台录制中，每 8 秒自动检查一次
-                          </span>
-                        </div>
-                      </div>
-                    ) : null}
-
-                    {captureResult.status === 'completed' ? (
-                      <div className="mt-4 space-y-3">
-                        <div>
-                          <p className="text-sm font-medium">
-                            录屏已经保存，可以开始复盘
+                    <label
+                      htmlFor="recording-file"
+                      className="flex min-h-44 cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed border-input bg-muted/30 p-6 text-center transition-colors duration-200 hover:border-primary hover:bg-accent/40 focus-within:border-primary focus-within:ring-3 focus-within:ring-ring/20"
+                    >
+                      {selectedRecordingFile ? (
+                        <>
+                          <FileCheck2 className="size-7 text-success" />
+                          <p className="mt-3 max-w-full truncate text-sm font-medium">
+                            {selectedRecordingFile.name}
                           </p>
-                        </div>
-                        {captureResult.files.length > 0 ? (
-                          captureResult.files.map((file) => (
-                            <div
-                              key={file.path}
-                              className="flex flex-col justify-between gap-3 rounded-md bg-muted/40 p-3 sm:flex-row sm:items-center"
-                            >
-                              <div className="min-w-0">
-                                <p className="truncate text-sm font-medium">
-                                  {file.name}
-                                </p>
-                                <p className="mt-1 text-xs text-muted-foreground">
-                                  {formatFileSize(file.sizeBytes)}
-                                </p>
-                              </div>
-                              <Button
-                                type="button"
-                                size="sm"
-                                disabled={submitting}
-                                onClick={() => {
-                                  void handleAnalyzeCapturedFile(file.path);
-                                }}
-                              >
-                                <WandSparkles className="size-3" />
-                                {analyzingPath === file.path
-                                  ? '正在复盘'
-                                  : '开始复盘'}
-                              </Button>
-                            </div>
-                          ))
-                        ) : (
-                          <Alert>
-                            <AlertTriangle className="size-4" />
-                            <AlertTitle>还没有找到录屏文件</AlertTitle>
-                            <AlertDescription>
-                              稍等片刻后刷新状态；如果仍然没有文件，可以重新录制。
-                            </AlertDescription>
-                          </Alert>
-                        )}
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="ghost"
-                          disabled={submitting}
-                          onClick={() => {
-                            setCaptureResult(null);
-                          }}
-                        >
-                          <RotateCcw className="size-3" />
-                          重新录制
-                        </Button>
-                      </div>
-                    ) : null}
-
-                    {captureResult.status === 'failed' ? (
-                      <div className="mt-4">
-                        <p className="text-sm leading-6">
-                          这次没有拿到可用录屏。请确认主播正在直播，链接可以正常打开。
-                        </p>
-                        <Button
-                          type="button"
-                          className="mt-3"
-                          size="sm"
-                          variant="outline"
-                          onClick={() => setCaptureResult(null)}
-                        >
-                          <RotateCcw className="size-3" />
-                          重新尝试
-                        </Button>
-                      </div>
-                    ) : null}
-                  </div>
-                ) : null}
-              </TabsContent>
-
-              <TabsContent value="recording_upload" className="mt-5 space-y-4">
-                <input
-                  id="recording-file"
-                  className="sr-only"
-                  type="file"
-                  accept="video/*,audio/*"
-                  onChange={(event: React.ChangeEvent<HTMLInputElement>) => {
-                    const file: File | undefined = event.target.files?.[0];
-                    if (file && file.size > MAX_RECORDING_FILE_SIZE_BYTES) {
-                      setSelectedRecordingFile(null);
-                      setRecordingName('');
-                      setErrorMessage('单个录屏文件不能超过 2 GB。');
-                      event.target.value = '';
-                      return;
-                    }
-                    setSelectedRecordingFile(file || null);
-                    setRecordingName(file?.name || '');
-                    setErrorMessage('');
-                  }}
-                />
-                <label
-                  htmlFor="recording-file"
-                  className="flex min-h-36 cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed border-border bg-muted/20 p-6 text-center transition-colors hover:bg-muted/40"
-                >
-                  {selectedRecordingFile ? (
-                    <>
-                      <FileCheck2 className="size-7 text-success" />
-                      <p className="mt-3 max-w-full truncate text-sm font-medium">
-                        {selectedRecordingFile.name}
-                      </p>
-                      <p className="mt-1 text-xs text-muted-foreground">
-                        {formatFileSize(selectedRecordingFile.size)} ·
-                        点击可重新选择
-                      </p>
-                    </>
-                  ) : (
-                    <>
-                      <Upload className="size-7 text-primary" />
-                      <p className="mt-3 text-sm font-medium">
-                        点击选择直播录屏
-                      </p>
-                    </>
-                  )}
-                </label>
-                <Button
-                  type="button"
-                  disabled={!canAnalyzeRecording}
-                  onClick={() => {
-                    void handleUploadRecordingAndAnalyze();
-                  }}
-                >
-                  <WandSparkles className="size-4" />
-                  上传并开始复盘
-                </Button>
-              </TabsContent>
-            </Tabs>
-
-            <div className="border-t border-border pt-5">
-              <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-center">
-                <div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <p className="text-sm font-medium">本次分析标准</p>
-                    <Badge variant="outline">
-                      {customFramework.trim() ? '已加入你的框架' : '内置框架'}
-                    </Badge>
-                  </div>
-                  <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                    {frameworkName || DEFAULT_FRAMEWORK_NAME}
-                  </p>
-                </div>
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="ghost"
-                  disabled={submitting}
-                  onClick={() =>
-                    setShowFrameworkSettings((current: boolean) => !current)
-                  }
-                >
-                  <Settings2 className="size-3" />
-                  {showFrameworkSettings ? '收起设置' : '更换标准'}
-                </Button>
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            {formatFileSize(selectedRecordingFile.size)} ·
+                            点击可重新选择
+                          </p>
+                        </>
+                      ) : (
+                        <>
+                          <Upload className="size-7 text-primary" />
+                          <p className="mt-3 text-sm font-medium">
+                            点击选择直播录屏
+                          </p>
+                        </>
+                      )}
+                    </label>
+                    <Button
+                      type="button"
+                      disabled={!canAnalyzeRecording}
+                      onClick={() => {
+                        void handleUploadRecordingAndAnalyze();
+                      }}
+                    >
+                      <WandSparkles className="size-4" />
+                      上传并开始复盘
+                    </Button>
+                  </TabsContent>
+                </Tabs>
               </div>
 
-              {showFrameworkSettings ? (
-                <div className="mt-4 grid gap-4 rounded-lg bg-muted/30 p-4">
-                  <div className="space-y-2">
-                    <label
-                      className="text-sm font-medium"
-                      htmlFor="framework-name"
-                    >
-                      框架名称
-                    </label>
-                    <Input
-                      id="framework-name"
-                      value={frameworkName}
-                      onChange={(event: React.ChangeEvent<HTMLInputElement>) =>
-                        setFrameworkName(event.target.value)
-                      }
-                      placeholder={DEFAULT_FRAMEWORK_NAME}
-                    />
+              <aside className="border-t border-border bg-muted/35 p-5 sm:p-6 lg:border-l lg:border-t-0">
+                <div className="flex flex-col justify-between gap-4">
+                  <div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <p className="text-sm font-semibold">本次分析标准</p>
+                      <Badge variant="outline">
+                        {customFramework.trim() ? '已加入你的框架' : '内置框架'}
+                      </Badge>
+                    </div>
+                    <p className="mt-2 text-sm leading-6 text-muted-foreground">
+                      {frameworkName || DEFAULT_FRAMEWORK_NAME}
+                    </p>
                   </div>
-                  <div className="space-y-2">
-                    <label
-                      className="text-sm font-medium"
-                      htmlFor="custom-framework"
-                    >
-                      粘贴你自己的话术框架
-                      <span className="ml-2 font-normal text-muted-foreground">
-                        可选
-                      </span>
-                    </label>
-                    <Textarea
-                      id="custom-framework"
-                      className="min-h-32"
-                      value={customFramework}
-                      onChange={(
-                        event: React.ChangeEvent<HTMLTextAreaElement>,
-                      ) => setCustomFramework(event.target.value)}
-                      placeholder="例如：前 60 分钟输出干货并完成案例演示；60-84 分钟承接课程和权益；84-90 分钟讲案例；后续持续成交承接。"
-                    />
-                  </div>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    disabled={submitting}
+                    onClick={() =>
+                      setShowFrameworkSettings((current: boolean) => !current)
+                    }
+                  >
+                    <Settings2 className="size-3" />
+                    {showFrameworkSettings ? '收起设置' : '更换标准'}
+                  </Button>
                 </div>
-              ) : null}
+
+                {showFrameworkSettings ? (
+                  <div className="mt-5 grid gap-4 border-t border-border pt-5">
+                    <div className="space-y-2">
+                      <label
+                        className="text-sm font-medium"
+                        htmlFor="framework-name"
+                      >
+                        框架名称
+                      </label>
+                      <Input
+                        id="framework-name"
+                        value={frameworkName}
+                        onChange={(
+                          event: React.ChangeEvent<HTMLInputElement>,
+                        ) => setFrameworkName(event.target.value)}
+                        placeholder={DEFAULT_FRAMEWORK_NAME}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <label
+                        className="text-sm font-medium"
+                        htmlFor="custom-framework"
+                      >
+                        粘贴你自己的话术框架
+                        <span className="ml-2 font-normal text-muted-foreground">
+                          可选
+                        </span>
+                      </label>
+                      <Textarea
+                        id="custom-framework"
+                        className="min-h-40"
+                        value={customFramework}
+                        onChange={(
+                          event: React.ChangeEvent<HTMLTextAreaElement>,
+                        ) => setCustomFramework(event.target.value)}
+                        placeholder="例如：前 60 分钟输出干货并完成案例演示；60-84 分钟承接课程和权益；84-90 分钟讲案例；后续持续成交承接。"
+                      />
+                    </div>
+                  </div>
+                ) : null}
+              </aside>
             </div>
 
             {submitting ? (
-              <AnalysisProgress
-                mode={analysisMode}
-                progress={progress}
-                uploading={uploadingRecording}
-              />
+              <div className="border-t border-border p-5 sm:p-6">
+                <AnalysisProgress
+                  mode={analysisMode}
+                  progress={progress}
+                  uploading={uploadingRecording}
+                />
+              </div>
             ) : null}
           </CardContent>
         </Card>
@@ -1505,11 +1490,13 @@ const DashboardPage: React.FC = () => {
           </div>
         </div>
 
-        <div className="mt-6 grid overflow-hidden rounded-lg border border-border sm:grid-cols-2 lg:grid-cols-4">
+        <div className="mt-6 grid overflow-hidden rounded-lg border border-border bg-card shadow-sm sm:grid-cols-2 lg:grid-cols-4">
           <div className="border-b border-border p-4 sm:border-r lg:border-b-0">
             <p className="text-xs text-muted-foreground">话术安全分</p>
             <div className="mt-1 flex items-end gap-2">
-              <span className="text-3xl font-semibold">{reportScore}</span>
+              <span className="text-3xl font-semibold tabular-nums text-primary">
+                {reportScore}
+              </span>
               <span className="pb-1 text-xs text-muted-foreground">
                 {scoreLabel(reportScore)}
               </span>
@@ -1517,7 +1504,7 @@ const DashboardPage: React.FC = () => {
           </div>
           <div className="border-b border-border p-4 lg:border-b-0 lg:border-r">
             <p className="text-xs text-muted-foreground">高风险原话</p>
-            <p className="mt-1 text-2xl font-semibold">
+            <p className="mt-1 text-2xl font-semibold tabular-nums text-destructive">
               {report.summary.highRiskFindings}
               <span className="ml-1 text-sm font-normal text-muted-foreground">
                 处
@@ -1526,7 +1513,7 @@ const DashboardPage: React.FC = () => {
           </div>
           <div className="border-b border-border p-4 sm:border-b-0 sm:border-r">
             <p className="text-xs text-muted-foreground">节奏缺口</p>
-            <p className="mt-1 text-2xl font-semibold">
+            <p className="mt-1 text-2xl font-semibold tabular-nums text-warning">
               {rhythmGapCount}
               <span className="ml-1 text-sm font-normal text-muted-foreground">
                 处
@@ -1535,7 +1522,7 @@ const DashboardPage: React.FC = () => {
           </div>
           <div className="p-4">
             <p className="text-xs text-muted-foreground">可替换改法</p>
-            <p className="mt-1 text-2xl font-semibold">
+            <p className="mt-1 text-2xl font-semibold tabular-nums text-success">
               {report.summary.rewriteSuggestions}
               <span className="ml-1 text-sm font-normal text-muted-foreground">
                 条
@@ -1544,7 +1531,7 @@ const DashboardPage: React.FC = () => {
           </div>
         </div>
 
-        <div className="mt-4 rounded-lg bg-muted/50 p-4">
+        <div className="mt-4 rounded-lg border border-primary/15 bg-accent/45 p-4">
           <div className="flex items-start gap-3">
             <ShieldCheck className="mt-0.5 size-5 shrink-0 text-primary" />
             <div>
@@ -1587,28 +1574,28 @@ const DashboardPage: React.FC = () => {
         onValueChange={(value: string) => setReportView(value as ReportView)}
         className="gap-5"
       >
-        <TabsList className="grid h-auto w-full grid-cols-2 gap-1 rounded-lg p-1 md:grid-cols-3 xl:grid-cols-6">
-          <TabsTrigger className="min-h-10" value="overview">
+        <TabsList className="grid h-auto w-full grid-cols-2 gap-1 rounded-lg bg-card p-1 shadow-sm sm:grid-cols-3 xl:grid-cols-6">
+          <TabsTrigger className="min-h-11" value="overview">
             <LayoutDashboard className="size-4" />
             总览
           </TabsTrigger>
-          <TabsTrigger className="min-h-10" value="risks">
+          <TabsTrigger className="min-h-11" value="risks">
             <ShieldAlert className="size-4" />
             风险整改
           </TabsTrigger>
-          <TabsTrigger className="min-h-10" value="rhythm">
+          <TabsTrigger className="min-h-11" value="rhythm">
             <Clock3 className="size-4" />
             节奏时间轴
           </TabsTrigger>
-          <TabsTrigger className="min-h-10" value="data">
+          <TabsTrigger className="min-h-11" value="data">
             <BarChart3 className="size-4" />
             数据复盘
           </TabsTrigger>
-          <TabsTrigger className="min-h-10" value="rewrite">
+          <TabsTrigger className="min-h-11" value="rewrite">
             <WandSparkles className="size-4" />
             复盘改稿
           </TabsTrigger>
-          <TabsTrigger className="min-h-10" value="chat">
+          <TabsTrigger className="min-h-11" value="chat">
             <MessageSquareText className="size-4" />
             追问报告
           </TabsTrigger>
@@ -1640,11 +1627,11 @@ const DashboardPage: React.FC = () => {
                   (finding: ScriptFinding, index: number) => (
                     <div
                       key={finding.id}
-                      className="rounded-lg border border-border p-4"
+                      className="rounded-lg border border-border bg-card p-4 shadow-xs transition-[border-color,box-shadow] duration-200 hover:border-primary/30 hover:shadow-sm"
                     >
                       <div className="flex items-center justify-between gap-3">
                         <div className="flex items-center gap-2">
-                          <span className="flex size-6 items-center justify-center rounded-md bg-foreground text-xs font-medium text-background">
+                          <span className="flex size-6 items-center justify-center rounded-md bg-primary text-xs font-medium text-primary-foreground">
                             {index + 1}
                           </span>
                           <Badge variant={riskVariant(finding.riskLevel)}>
@@ -1675,7 +1662,7 @@ const DashboardPage: React.FC = () => {
                   ),
                 )
               ) : (
-                <div className="rounded-lg border border-border p-4 lg:col-span-3">
+                <div className="rounded-lg border border-border bg-card p-4 lg:col-span-3">
                   <p className="text-sm font-medium">暂未发现明显高风险</p>
                   <p className="mt-2 text-sm text-muted-foreground">
                     可以继续检查直播节奏和课程承接是否完整。
@@ -1693,9 +1680,11 @@ const DashboardPage: React.FC = () => {
               </h2>
             </div>
             <div className="mt-4 grid gap-3 lg:grid-cols-3">
-              <div className="rounded-lg border border-border border-l-success border-l-4 p-4">
+              <div className="rounded-lg border border-success/30 bg-card p-4">
                 <div className="flex items-center gap-2">
-                  <CheckCircle2 className="size-4 text-success" />
+                  <span className="flex size-8 shrink-0 items-center justify-center rounded-md bg-success/10 text-success">
+                    <CheckCircle2 className="size-4" />
+                  </span>
                   <p className="text-sm font-medium">继续保留</p>
                 </div>
                 <div className="mt-3 space-y-2">
@@ -1709,9 +1698,11 @@ const DashboardPage: React.FC = () => {
                   ))}
                 </div>
               </div>
-              <div className="rounded-lg border border-border border-l-destructive border-l-4 p-4">
+              <div className="rounded-lg border border-destructive/30 bg-card p-4">
                 <div className="flex items-center gap-2">
-                  <ShieldAlert className="size-4 text-destructive" />
+                  <span className="flex size-8 shrink-0 items-center justify-center rounded-md bg-destructive/10 text-destructive">
+                    <ShieldAlert className="size-4" />
+                  </span>
                   <p className="text-sm font-medium">优先别再说</p>
                 </div>
                 <div className="mt-3 space-y-2">
@@ -1725,9 +1716,11 @@ const DashboardPage: React.FC = () => {
                   ))}
                 </div>
               </div>
-              <div className="rounded-lg border border-border border-l-warning border-l-4 p-4">
+              <div className="rounded-lg border border-warning/30 bg-card p-4">
                 <div className="flex items-center gap-2">
-                  <ListChecks className="size-4 text-warning" />
+                  <span className="flex size-8 shrink-0 items-center justify-center rounded-md bg-warning/10 text-warning">
+                    <ListChecks className="size-4" />
+                  </span>
                   <p className="text-sm font-medium">下一步先做</p>
                 </div>
                 <p className="mt-3 text-sm leading-6 text-muted-foreground">

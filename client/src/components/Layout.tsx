@@ -183,29 +183,36 @@ const Layout = () => {
   }, []);
 
   return (
-    <div className="min-h-screen bg-background text-foreground">
-      <header className="sticky top-0 z-20 border-b border-border bg-background/95 backdrop-blur">
+    <div className="min-h-dvh bg-background text-foreground">
+      <a
+        href="#main-content"
+        className="fixed left-4 top-3 z-50 -translate-y-20 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-transform focus:translate-y-0"
+      >
+        跳到主要内容
+      </a>
+      <header className="sticky top-0 z-20 border-b border-border bg-card shadow-xs">
         <div className="mx-auto flex min-h-16 w-full max-w-7xl flex-wrap items-center justify-between gap-3 px-4 py-2 sm:px-6 lg:px-8">
           <div className="flex items-center gap-3">
-            <div className="flex size-9 items-center justify-center rounded-md bg-foreground text-sm font-bold text-background">
+            <div className="flex size-10 items-center justify-center rounded-md bg-primary text-sm font-bold text-primary-foreground shadow-sm">
               复
             </div>
-            <div>
-              <p className="text-sm font-semibold">AI 知识付费直播复盘</p>
-              <p className="text-xs text-muted-foreground">
-                找风险 · 看节奏 · 拿改稿
-              </p>
-            </div>
+            <p className="max-w-36 text-sm font-semibold leading-5 sm:max-w-none">
+              AI 知识付费直播复盘
+            </p>
           </div>
-          <nav className="order-3 flex w-full items-center gap-1 border-t border-border pt-2 sm:order-none sm:w-auto sm:border-0 sm:pt-0">
+          <nav
+            aria-label="主要导航"
+            className="order-3 flex w-full items-center gap-1 border-t border-border pt-2 sm:order-none sm:w-auto sm:border-0 sm:pt-0"
+          >
             <NavLink
               to="/"
               end
+              reloadDocument
               className={({ isActive }) =>
-                'flex min-h-9 flex-1 items-center justify-center gap-2 rounded-md px-3 text-sm font-medium transition-colors sm:flex-none ' +
+                'flex min-h-10 flex-1 items-center justify-center gap-2 rounded-md px-4 text-sm font-medium transition-colors duration-200 sm:flex-none ' +
                 (isActive
-                  ? 'bg-muted text-foreground'
-                  : 'text-muted-foreground hover:bg-muted/60 hover:text-foreground')
+                  ? 'bg-accent text-accent-foreground shadow-xs'
+                  : 'text-muted-foreground hover:bg-muted hover:text-foreground')
               }
             >
               <PlusCircle className="size-4" />
@@ -214,10 +221,10 @@ const Layout = () => {
             <NavLink
               to="/history"
               className={({ isActive }) =>
-                'flex min-h-9 flex-1 items-center justify-center gap-2 rounded-md px-3 text-sm font-medium transition-colors sm:flex-none ' +
+                'flex min-h-10 flex-1 items-center justify-center gap-2 rounded-md px-4 text-sm font-medium transition-colors duration-200 sm:flex-none ' +
                 (isActive
-                  ? 'bg-muted text-foreground'
-                  : 'text-muted-foreground hover:bg-muted/60 hover:text-foreground')
+                  ? 'bg-accent text-accent-foreground shadow-xs'
+                  : 'text-muted-foreground hover:bg-muted hover:text-foreground')
               }
             >
               <History className="size-4" />
@@ -227,12 +234,7 @@ const Layout = () => {
           <div className="flex items-center gap-2">
             {user.role === 'admin' ? <CreateAnchorDialog /> : null}
             <div className="hidden items-center gap-2 border-l border-border pl-3 sm:flex">
-              <div className="text-right">
-                <p className="text-xs font-medium">{user.displayName}</p>
-                <p className="text-[11px] text-muted-foreground">
-                  @{user.username}
-                </p>
-              </div>
+              <p className="text-sm font-medium">{user.displayName}</p>
               <Badge variant="secondary">
                 {user.role === 'admin' ? '管理员' : '主播'}
               </Badge>
@@ -250,7 +252,9 @@ const Layout = () => {
           </div>
         </div>
       </header>
-      <Outlet />
+      <div id="main-content" tabIndex={-1}>
+        <Outlet />
+      </div>
     </div>
   );
 };

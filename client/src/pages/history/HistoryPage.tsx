@@ -89,7 +89,12 @@ const HistoryPage: React.FC = () => {
     const keyword: string = query.trim().toLowerCase();
     if (!keyword) return result?.items || [];
     return (result?.items || []).filter((item: HistoryReportSummary) =>
-      [item.title, item.frameworkName, item.owner.displayName, item.owner.username]
+      [
+        item.title,
+        item.frameworkName,
+        item.owner.displayName,
+        item.owner.username,
+      ]
         .join(' ')
         .toLowerCase()
         .includes(keyword),
@@ -106,14 +111,25 @@ const HistoryPage: React.FC = () => {
     [result?.items],
   );
 
+  const averageScore: number = useMemo(() => {
+    const items: HistoryReportSummary[] = result?.items || [];
+    if (items.length === 0) return 0;
+    return Math.round(
+      items.reduce(
+        (total: number, item: HistoryReportSummary) => total + item.score,
+        0,
+      ) / items.length,
+    );
+  }, [result?.items]);
+
   return (
-    <main className="mx-auto w-full max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
-      <section className="flex flex-col justify-between gap-5 border-b border-border pb-7 sm:flex-row sm:items-end">
+    <main className="mx-auto w-full max-w-7xl px-4 py-7 sm:px-6 lg:px-8">
+      <section className="flex flex-col justify-between gap-5 border-b border-border pb-6 sm:flex-row sm:items-end">
         <div>
-          <p className="text-xs font-medium text-primary">
+          <Badge variant="secondary">
             {user.role === 'admin' ? '全部主播' : '我的直播'}
-          </p>
-          <h1 className="mt-2 text-3xl font-semibold tracking-normal">
+          </Badge>
+          <h1 className="mt-3 text-3xl font-semibold tracking-normal">
             历史复盘
           </h1>
         </div>
@@ -150,22 +166,41 @@ const HistoryPage: React.FC = () => {
         </div>
       ) : result && result.items.length > 0 ? (
         <section className="mt-7">
-          <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
-            <div className="flex items-center gap-6 text-sm">
-              <div>
-                <p className="text-xs text-muted-foreground">复盘总数</p>
-                <p className="mt-1 text-xl font-semibold">{result.total}</p>
+          <div className="flex flex-col justify-between gap-5 lg:flex-row lg:items-end">
+            <dl className="grid overflow-hidden rounded-lg border border-border bg-card sm:grid-cols-3 lg:min-w-[36rem]">
+              <div className="border-b border-border px-4 py-3 sm:border-b-0 sm:border-r">
+                <dt className="text-xs font-medium text-muted-foreground">
+                  复盘总数
+                </dt>
+                <dd className="mt-1 text-2xl font-semibold tabular-nums">
+                  {result.total}
+                </dd>
               </div>
-              <div className="border-l border-border pl-6">
-                <p className="text-xs text-muted-foreground">高风险原话</p>
-                <p className="mt-1 text-xl font-semibold text-destructive">
+              <div className="border-b border-border px-4 py-3 sm:border-b-0 sm:border-r">
+                <dt className="text-xs font-medium text-muted-foreground">
+                  平均安全分
+                </dt>
+                <dd className="mt-1 text-2xl font-semibold tabular-nums text-primary">
+                  {averageScore}
+                </dd>
+              </div>
+              <div className="px-4 py-3">
+                <dt className="text-xs font-medium text-muted-foreground">
+                  高风险原话
+                </dt>
+                <dd className="mt-1 text-2xl font-semibold tabular-nums text-destructive">
                   {highRiskTotal}
-                </p>
+                </dd>
               </div>
-            </div>
+            </dl>
             <div className="relative w-full sm:max-w-sm">
+              <label className="sr-only" htmlFor="history-search">
+                搜索历史复盘
+              </label>
               <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
               <Input
+                id="history-search"
+                type="search"
                 className="pl-9"
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
@@ -178,8 +213,8 @@ const HistoryPage: React.FC = () => {
             </div>
           </div>
 
-          <div className="mt-5 overflow-hidden rounded-lg border border-border">
-            <div className="hidden grid-cols-[minmax(0,2fr)_8rem_8rem_7rem_2rem] gap-4 border-b border-border bg-muted/30 px-4 py-3 text-xs font-medium text-muted-foreground md:grid">
+          <div className="mt-5 overflow-hidden rounded-lg border border-border bg-card shadow-sm">
+            <div className="hidden grid-cols-[minmax(0,2fr)_8rem_8rem_7rem_2rem] gap-4 border-b border-border bg-muted/55 px-4 py-3 text-xs font-medium text-muted-foreground md:grid">
               <span>直播报告</span>
               <span>{user.role === 'admin' ? '所属主播' : '直播时长'}</span>
               <span>分析时间</span>
@@ -190,7 +225,7 @@ const HistoryPage: React.FC = () => {
               <button
                 key={item.id}
                 type="button"
-                className="grid w-full min-w-0 gap-3 border-b border-border px-4 py-4 text-left transition-colors last:border-b-0 hover:bg-muted/30 md:grid-cols-[minmax(0,2fr)_8rem_8rem_7rem_2rem] md:items-center md:gap-4"
+                className="grid w-full min-w-0 cursor-pointer gap-3 border-b border-border px-4 py-4 text-left transition-colors duration-200 last:border-b-0 hover:bg-accent/35 focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-inset focus-visible:ring-ring/20 md:grid-cols-[minmax(0,2fr)_8rem_8rem_7rem_2rem] md:items-center md:gap-4"
                 onClick={() => navigate(`/?report=${item.id}`)}
               >
                 <div className="min-w-0">
@@ -225,8 +260,12 @@ const HistoryPage: React.FC = () => {
                   {formatDate(item.createdAt)}
                 </div>
                 <div className="flex items-center gap-2 text-xs">
-                  <span className="text-muted-foreground md:hidden">安全分</span>
-                  <span className={`text-base font-semibold ${scoreTone(item.score)}`}>
+                  <span className="text-muted-foreground md:hidden">
+                    安全分
+                  </span>
+                  <span
+                    className={`text-base font-semibold ${scoreTone(item.score)}`}
+                  >
                     {item.score}
                   </span>
                   <span className="text-muted-foreground">/ 100</span>

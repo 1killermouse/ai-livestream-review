@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { ChatOpenAI } from '@langchain/openai';
 import axios, { type AxiosResponse } from 'axios';
 
 import type {
@@ -43,6 +44,26 @@ export class DeepSeekAnalysisService {
     return process.env.DEEPSEEK_MODEL || 'deepseek-v4-flash';
   }
 
+  createToolCallingModel(): ChatOpenAI {
+    const apiKey: string | undefined = process.env.DEEPSEEK_API_KEY;
+    if (!apiKey) {
+      throw new Error('DeepSeek API Key 未配置');
+    }
+
+    return new ChatOpenAI({
+      apiKey,
+      model: this.getModelName(),
+      temperature: 0.2,
+      maxTokens: 1400,
+      maxRetries: 1,
+      timeout: 45000,
+      useResponsesApi: false,
+      configuration: {
+        baseURL: this.getBaseUrl(),
+      },
+    });
+  }
+
   async analyzeTranscript(options: {
     transcriptSegments: TranscriptSegmentSummary[];
     frameworkName: string;
@@ -85,7 +106,8 @@ export class DeepSeekAnalysisService {
         },
       );
 
-    const content: string | undefined = response.data.choices?.[0]?.message?.content;
+    const content: string | undefined =
+      response.data.choices?.[0]?.message?.content;
     if (!content) {
       return [];
     }
@@ -197,7 +219,12 @@ export class DeepSeekAnalysisService {
 
   private buildTranscriptContext(
     transcriptSegments: TranscriptSegmentSummary[],
-  ): Array<Pick<TranscriptSegmentSummary, 'startSeconds' | 'endSeconds' | 'text' | 'matchedStage'>> {
+  ): Array<
+    Pick<
+      TranscriptSegmentSummary,
+      'startSeconds' | 'endSeconds' | 'text' | 'matchedStage'
+    >
+  > {
     const context: Array<
       Pick<
         TranscriptSegmentSummary,
@@ -239,7 +266,8 @@ export class DeepSeekAnalysisService {
             startSeconds: Math.max(0, Math.floor(finding.startSeconds || 0)),
             originalText: finding.originalText?.trim() || '',
             matchedRule: `DeepSeek 语义判断：${finding.matchedRule?.trim() || '语义风险'}`,
-            analysis: finding.analysis?.trim() || 'DeepSeek 判断该表达存在潜在风险。',
+            analysis:
+              finding.analysis?.trim() || 'DeepSeek 判断该表达存在潜在风险。',
             suggestion:
               finding.suggestion?.trim() ||
               '建议改成条件型、边界清晰、不过度承诺的表达。',
