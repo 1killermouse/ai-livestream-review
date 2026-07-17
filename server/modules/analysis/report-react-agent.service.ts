@@ -1,5 +1,4 @@
-import { Injectable } from '@nestjs/common';
-import type { BaseMessage } from '@langchain/core/messages';
+import { Injectable, Logger } from '@nestjs/common';
 import { tool } from '@langchain/core/tools';
 import { createReactAgent } from '@langchain/langgraph/prebuilt';
 import { z } from 'zod';
@@ -8,6 +7,8 @@ import type {
   FrameworkMatchSummary,
   PrototypeAnalysisReport,
   RagReferenceSummary,
+  ReportAnswerConfidence,
+  ReportChatFallbackReason,
   ReportChatMessage,
   ReportChatResponse,
   ScriptFinding,
@@ -16,6 +17,12 @@ import type {
 
 import { DeepSeekAnalysisService } from './deepseek-analysis.service';
 import { RagKnowledgeProvider } from './rag-knowledge.provider';
+import {
+  isWarningOrRefutationContext,
+  ReportAnswerEvidenceValidator,
+  type ObservedReportEvidence,
+  type SubmittedReportAnswer,
+} from './report-answer-evidence.validator';
 
 interface ReportReactAgentOptions {
   report: PrototypeAnalysisReport;
@@ -24,20 +31,51 @@ interface ReportReactAgentOptions {
   fallbackSegments: TranscriptSegmentSummary[];
 }
 
+interface ReportToolEvidenceContext extends ObservedReportEvidence {
+  segments: Map<string, TranscriptSegmentSummary>;
+  findings: Map<string, ScriptFinding>;
+}
+
+interface AnswerSubmissionRef {
+  value?: SubmittedReportAnswer;
+}
+
+interface LocalAnswerResult {
+  answer: string;
+  relatedSegments: TranscriptSegmentSummary[];
+  confidence: ReportAnswerConfidence;
+  citationCount: number;
+}
+
 @Injectable()
 export class ReportReactAgentService {
+  private readonly logger = new Logger(ReportReactAgentService.name);
+
   constructor(
     private readonly deepSeekAnalysisService: DeepSeekAnalysisService,
     private readonly ragKnowledgeProvider: RagKnowledgeProvider,
+    private readonly evidenceValidator: ReportAnswerEvidenceValidator,
   ) {}
 
   async answer(options: ReportReactAgentOptions): Promise<ReportChatResponse> {
     if (!this.deepSeekAnalysisService.isConfigured()) {
-      return this.answerLocally(options);
+      return this.answerLocally(options, 'model_not_configured');
     }
 
-    const selectedSegments: Map<string, TranscriptSegmentSummary> = new Map();
-    const tools = this.createTools(options.report, selectedSegments);
+    const evidenceContext: ReportToolEvidenceContext = {
+      segments: new Map(),
+      findings: new Map(),
+      segmentIds: new Set(),
+      findingIds: new Set(),
+      frameworkStages: new Set(),
+      overviewUsed: false,
+    };
+    const submissionRef: AnswerSubmissionRef = {};
+    const tools = this.createTools(
+      options.report,
+      evidenceContext,
+      submissionRef,
+    );
     const agent = createReactAgent({
       llm: this.deepSeekAnalysisService.createToolCallingModel(),
       tools,
@@ -47,7 +85,7 @@ export class ReportReactAgentService {
     });
 
     try {
-      const result = await agent.invoke(
+      await agent.invoke(
         {
           messages: [
             ...options.messages.slice(-6).map((message: ReportChatMessage) => ({
@@ -57,44 +95,74 @@ export class ReportReactAgentService {
             { role: 'user', content: options.question },
           ],
         },
-        { recursionLimit: 10 },
+        { recursionLimit: 12 },
       );
-      const answer: string = this.extractFinalAnswer(result.messages);
-      if (!answer) {
-        return this.answerWithFallback(options);
+      if (!submissionRef.value) {
+        this.logger.warn('ReAct 未通过 submit_report_answer 提交答案');
+        return this.answerLocally(options, 'submission_missing');
+      }
+
+      const validation = this.evidenceValidator.validate({
+        report: options.report,
+        question: options.question,
+        submission: submissionRef.value,
+        observed: evidenceContext,
+      });
+      if (!validation.valid) {
+        this.logger.warn(
+          `ReAct 证据校验未通过：${validation.reasons.join('；')}`,
+        );
+        return this.answerLocally(options, 'validation_failed');
       }
 
       return {
-        answer: this.sanitizeAnswer(answer),
-        relatedSegments:
-          selectedSegments.size > 0
-            ? [...selectedSegments.values()].slice(0, 8)
-            : options.fallbackSegments,
+        answer: this.sanitizeAnswer(submissionRef.value.answer),
+        relatedSegments: validation.relatedSegments,
+        evidence: {
+          validated: true,
+          confidence: validation.confidence,
+          citationCount: validation.citationCount,
+          fallbackUsed: false,
+          source: 'react_validated',
+        },
       };
-    } catch {
-      return this.answerWithFallback(options);
+    } catch (error: unknown) {
+      this.logger.warn(
+        `ReAct 调用失败，已改用本地报告答案：${error instanceof Error ? error.message : '未知错误'}`,
+      );
+      return this.answerLocally(options, 'agent_failed');
     }
   }
 
   private createTools(
     report: PrototypeAnalysisReport,
-    selectedSegments: Map<string, TranscriptSegmentSummary>,
+    evidenceContext: ReportToolEvidenceContext,
+    submissionRef: AnswerSubmissionRef,
   ) {
     const rememberSegments = (segments: TranscriptSegmentSummary[]): void => {
       for (const segment of segments) {
-        selectedSegments.set(segment.id, segment);
+        evidenceContext.segments.set(segment.id, segment);
+        evidenceContext.segmentIds.add(segment.id);
+      }
+    };
+    const rememberFindings = (findings: ScriptFinding[]): void => {
+      for (const finding of findings) {
+        evidenceContext.findings.set(finding.id, finding);
+        evidenceContext.findingIds.add(finding.id);
       }
     };
 
     const getReportOverview = tool(
-      () =>
-        JSON.stringify({
+      () => {
+        evidenceContext.overviewUsed = true;
+        return JSON.stringify({
           title: report.title,
           durationSeconds: report.durationSeconds,
           transcriptWordCount: report.transcriptWordCount,
           frameworkName: report.frameworkName,
           summary: report.summary,
-        }),
+        });
+      },
       {
         name: 'get_report_overview',
         description:
@@ -113,6 +181,7 @@ export class ReportReactAgentService {
         rememberSegments(segments);
         return JSON.stringify(
           segments.map((segment: TranscriptSegmentSummary) => ({
+            segmentId: segment.id,
             startSeconds: segment.startSeconds,
             endSeconds: segment.endSeconds,
             timeLabel: this.formatSeconds(segment.startSeconds),
@@ -140,6 +209,7 @@ export class ReportReactAgentService {
           riskLevel,
           limit,
         );
+        rememberFindings(findings);
         rememberSegments(
           findings
             .map((finding: ScriptFinding) =>
@@ -155,14 +225,33 @@ export class ReportReactAgentService {
             ),
         );
         return JSON.stringify(
-          findings.map((finding: ScriptFinding) => ({
-            riskLevel: finding.riskLevel,
-            timeLabel: this.formatSeconds(finding.startSeconds),
-            originalText: finding.originalText,
-            matchedRule: finding.matchedRule,
-            analysis: finding.analysis,
-            suggestion: finding.suggestion,
-          })),
+          findings.map((finding: ScriptFinding) => {
+            const contextSegment: TranscriptSegmentSummary | undefined =
+              this.findSegmentAt(
+                report.transcriptSegments,
+                finding.startSeconds,
+              );
+            const warningOrRefutation: boolean =
+              isWarningOrRefutationContext(
+                contextSegment?.text || finding.originalText,
+              );
+            return {
+              findingId: finding.id,
+              riskLevel: finding.riskLevel,
+              timeLabel: this.formatSeconds(finding.startSeconds),
+              originalText: finding.originalText,
+              contextText: contextSegment?.text,
+              speechContext: warningOrRefutation
+                ? 'warning_or_refutation'
+                : 'speaker_claim_or_unclear',
+              contextNote: warningOrRefutation
+                ? '这段是在引用、否定或提醒，不应直接归为主播自己的承诺。'
+                : undefined,
+              matchedRule: finding.matchedRule,
+              analysis: finding.analysis,
+              suggestion: finding.suggestion,
+            };
+          }),
         );
       },
       {
@@ -183,6 +272,9 @@ export class ReportReactAgentService {
           report.frameworkMatches,
           query,
         );
+        for (const match of matches) {
+          evidenceContext.frameworkStages.add(match.stageName);
+        }
         return JSON.stringify(matches);
       },
       {
@@ -203,6 +295,7 @@ export class ReportReactAgentService {
           undefined,
           limit,
         );
+        rememberFindings(findings);
         rememberSegments(
           findings
             .map((finding: ScriptFinding) =>
@@ -219,6 +312,7 @@ export class ReportReactAgentService {
         );
         return JSON.stringify(
           findings.map((finding: ScriptFinding) => ({
+            findingId: finding.id,
             timeLabel: this.formatSeconds(finding.startSeconds),
             originalText: finding.originalText,
             problem: finding.analysis,
@@ -254,6 +348,34 @@ export class ReportReactAgentService {
       },
     );
 
+    const submitAnswer = tool(
+      ({ answer, segmentIds, findingIds, frameworkStages, confidence }) => {
+        submissionRef.value = {
+          answer: answer.trim(),
+          segmentIds,
+          findingIds,
+          frameworkStages,
+          confidence,
+        };
+        return JSON.stringify({
+          accepted: true,
+          instruction: '答案已提交，请直接结束。',
+        });
+      },
+      {
+        name: 'submit_report_answer',
+        description:
+          '提交给主播的最终答案和证据。必须作为最后一个工具调用，所有ID必须来自之前工具返回的本场报告依据。',
+        schema: z.object({
+          answer: z.string().min(1).max(5000),
+          segmentIds: z.array(z.string()).max(8).default([]),
+          findingIds: z.array(z.string()).max(8).default([]),
+          frameworkStages: z.array(z.string()).max(8).default([]),
+          confidence: z.enum(['high', 'medium', 'low']).default('medium'),
+        }),
+      },
+    );
+
     return [
       getReportOverview,
       searchTranscript,
@@ -261,37 +383,30 @@ export class ReportReactAgentService {
       inspectFramework,
       inspectRewrites,
       retrieveKnowledge,
+      submitAnswer,
     ];
   }
 
-  private async answerWithFallback(
+  private answerLocally(
     options: ReportReactAgentOptions,
-  ): Promise<ReportChatResponse> {
-    try {
-      const answer: string =
-        await this.deepSeekAnalysisService.answerReportQuestion({
-          report: options.report,
-          question: options.question,
-          messages: options.messages,
-          relatedSegments: options.fallbackSegments,
-        });
-      return {
-        answer: this.sanitizeAnswer(answer),
-        relatedSegments: options.fallbackSegments,
-      };
-    } catch {
-      return this.answerLocally(options);
-    }
-  }
-
-  private answerLocally(options: ReportReactAgentOptions): ReportChatResponse {
+    fallbackReason: ReportChatFallbackReason,
+  ): ReportChatResponse {
+    const localResult: LocalAnswerResult = this.buildLocalAnswer(
+      options.report,
+      options.question,
+      options.fallbackSegments,
+    );
     return {
-      answer: this.buildLocalAnswer(
-        options.report,
-        options.question,
-        options.fallbackSegments,
-      ),
-      relatedSegments: options.fallbackSegments,
+      answer: this.sanitizeAnswer(localResult.answer),
+      relatedSegments: localResult.relatedSegments,
+      evidence: {
+        validated: true,
+        confidence: localResult.confidence,
+        citationCount: localResult.citationCount,
+        fallbackUsed: true,
+        source: 'local_fallback',
+        fallbackReason,
+      },
     };
   }
 
@@ -299,7 +414,44 @@ export class ReportReactAgentService {
     report: PrototypeAnalysisReport,
     question: string,
     relatedSegments: TranscriptSegmentSummary[],
-  ): string {
+  ): LocalAnswerResult {
+    if (/最该.{0,6}改|先改|优先改|哪.{0,6}(?:处|个).{0,4}改/.test(question)) {
+      const findings: ScriptFinding[] = this.searchFindings(
+        report.findings,
+        undefined,
+        undefined,
+        3,
+      );
+      const warningSegments: TranscriptSegmentSummary[] = this.uniqueSegments(
+        findings
+          .map((finding: ScriptFinding) =>
+            this.findSegmentAt(
+              report.transcriptSegments,
+              finding.startSeconds,
+            ),
+          )
+          .filter(
+            (
+              segment: TranscriptSegmentSummary | undefined,
+            ): segment is TranscriptSegmentSummary =>
+              Boolean(
+                segment && isWarningOrRefutationContext(segment.text),
+              ),
+          ),
+      );
+      if (findings.length > 0 && warningSegments.length > 0) {
+        const firstTime: string = this.formatSeconds(
+          warningSegments[0].startSeconds,
+        );
+        return {
+          answer: `报告原本把 ${firstTime} 附近的 ${findings.length} 句话列为风险，但结合完整原文，它们是主播用来提醒用户的反例，不是主播自己的收益承诺，不应该按 ${findings.length} 次承诺来理解。这里真正要改的是表达方式：减少逐字复述这些敏感说法，直接说：“遇到过度保证结果、强调短期回本或夸大工具效果的说法，要先核实交付内容和适用条件。”`,
+          relatedSegments: warningSegments,
+          confidence: 'high',
+          citationCount: findings.length + warningSegments.length,
+        };
+      }
+    }
+
     if (/怎么改|改写|重写|替换|话术/.test(question)) {
       const finding: ScriptFinding | undefined = this.searchFindings(
         report.findings,
@@ -308,7 +460,17 @@ export class ReportReactAgentService {
         1,
       )[0];
       if (finding) {
-        return `${this.formatSeconds(finding.startSeconds)} 这句“${finding.originalText}”建议改成：${finding.replacementScript}`;
+        const warningAnswer: LocalAnswerResult | undefined =
+          this.buildWarningContextAnswer(report, finding, relatedSegments);
+        if (warningAnswer) {
+          return warningAnswer;
+        }
+        return this.buildLocalFindingAnswer(
+          report,
+          finding,
+          `${this.formatSeconds(finding.startSeconds)} 这句“${finding.originalText}”建议改成：${finding.replacementScript}`,
+          relatedSegments,
+        );
       }
     }
 
@@ -320,7 +482,17 @@ export class ReportReactAgentService {
         1,
       )[0];
       if (finding) {
-        return `本场最需要先改的是 ${this.formatSeconds(finding.startSeconds)} 的“${finding.originalText}”。${finding.analysis}${finding.suggestion}`;
+        const warningAnswer: LocalAnswerResult | undefined =
+          this.buildWarningContextAnswer(report, finding, relatedSegments);
+        if (warningAnswer) {
+          return warningAnswer;
+        }
+        return this.buildLocalFindingAnswer(
+          report,
+          finding,
+          `本场最需要先改的是 ${this.formatSeconds(finding.startSeconds)} 的“${finding.originalText}”。${finding.analysis}${finding.suggestion}`,
+          relatedSegments,
+        );
       }
     }
 
@@ -335,14 +507,75 @@ export class ReportReactAgentService {
             candidate.status !== 'matched',
         ) || matches[0];
       if (match) {
-        return `${match.stageName}这一环节当前${match.evidence}。下一场建议：${match.suggestion}`;
+        return {
+          answer: `${match.stageName}这一环节当前${match.evidence}。下一场建议：${match.suggestion}`,
+          relatedSegments: [],
+          confidence: 'medium',
+          citationCount: 1,
+        };
       }
     }
 
     const evidence: TranscriptSegmentSummary | undefined = relatedSegments[0];
-    return evidence
-      ? `${report.summary.overallDiagnosis}可以先回看 ${this.formatSeconds(evidence.startSeconds)} 附近：“${evidence.text}”。`
-      : report.summary.overallDiagnosis || '这场报告里暂时看不到。';
+    return {
+      answer: evidence
+        ? `${report.summary.overallDiagnosis}可以先回看 ${this.formatSeconds(evidence.startSeconds)} 附近：“${evidence.text}”。`
+        : report.summary.overallDiagnosis || '这场报告里暂时看不到。',
+      relatedSegments: evidence ? [evidence] : [],
+      confidence: 'medium',
+      citationCount: 1,
+    };
+  }
+
+  private buildLocalFindingAnswer(
+    report: PrototypeAnalysisReport,
+    finding: ScriptFinding,
+    answer: string,
+    fallbackSegments: TranscriptSegmentSummary[],
+  ): LocalAnswerResult {
+    const segment: TranscriptSegmentSummary | undefined = this.findSegmentAt(
+      report.transcriptSegments,
+      finding.startSeconds,
+    );
+    return {
+      answer,
+      relatedSegments: segment ? [segment] : fallbackSegments.slice(0, 1),
+      confidence: segment ? 'high' : 'medium',
+      citationCount: segment ? 2 : 1,
+    };
+  }
+
+  private buildWarningContextAnswer(
+    report: PrototypeAnalysisReport,
+    finding: ScriptFinding,
+    fallbackSegments: TranscriptSegmentSummary[],
+  ): LocalAnswerResult | undefined {
+    const segment: TranscriptSegmentSummary | undefined = this.findSegmentAt(
+      report.transcriptSegments,
+      finding.startSeconds,
+    );
+    if (!segment || !isWarningOrRefutationContext(segment.text)) {
+      return undefined;
+    }
+    return {
+      answer: `${this.formatSeconds(finding.startSeconds)} 这段是在提醒用户警惕夸张说法，不是主播自己的收益承诺。为了表达更干净，可以不逐字复述具体承诺，直接改成：“遇到过度保证结果、夸大工具效果的说法，要先核实交付内容和适用条件。”`,
+      relatedSegments: [segment],
+      confidence: 'high',
+      citationCount: 2,
+    };
+  }
+
+  private uniqueSegments(
+    segments: TranscriptSegmentSummary[],
+  ): TranscriptSegmentSummary[] {
+    return [
+      ...new Map(
+        segments.map((segment: TranscriptSegmentSummary) => [
+          segment.id,
+          segment,
+        ]),
+      ).values(),
+    ].slice(0, 8);
   }
 
   private buildSystemPrompt(report: PrototypeAnalysisReport): string {
@@ -353,6 +586,10 @@ export class ReportReactAgentService {
       '回答用主播听得懂的大白话，优先给直接结论、对应时间点和能直接开播的改法。',
       '不要暴露思考过程、工具名称或技术架构，不要编造数据，不要使用Markdown符号。',
       '风险结论是本项目的复盘建议，不是平台官方审核结果；不得声称一定会处罚或封禁。',
+      '必须先区分主播是在做承诺，还是在引用、否定或提醒。若工具标记 speechContext=warning_or_refutation，不得把原话直接写成主播自己的承诺；先说明语境，再给更简洁的表达建议。',
+      '不得断言引用或复述风险词一定触发平台审核、限流或处罚。',
+      '完成查证后必须调用 submit_report_answer 提交最终答案，不得直接在最终消息中回答。',
+      'segmentIds、findingIds 和 frameworkStages 只能使用工具返回的真实ID或阶段名。',
       `报告身份：${JSON.stringify({
         id: report.id,
         title: report.title,
@@ -362,38 +599,6 @@ export class ReportReactAgentService {
     ].join('\n');
   }
 
-  private extractFinalAnswer(messages: BaseMessage[]): string {
-    for (let index = messages.length - 1; index >= 0; index -= 1) {
-      const message: BaseMessage = messages[index];
-      if (message.getType() !== 'ai') {
-        continue;
-      }
-      if (typeof message.content === 'string') {
-        return message.content.trim();
-      }
-      if (Array.isArray(message.content)) {
-        return message.content
-          .map((block: unknown): string => {
-            if (typeof block === 'string') {
-              return block;
-            }
-            if (
-              typeof block === 'object' &&
-              block !== null &&
-              'text' in block &&
-              typeof block.text === 'string'
-            ) {
-              return block.text;
-            }
-            return '';
-          })
-          .join('')
-          .trim();
-      }
-    }
-    return '';
-  }
-
   private sanitizeAnswer(answer: string): string {
     return answer
       .replace(/^\s*```[^\n]*$/gm, '')
@@ -401,6 +606,7 @@ export class ReportReactAgentService {
       .replace(/^\s*#{1,6}\s+/gm, '')
       .replace(/^\s*>\s?/gm, '')
       .replace(/^\s*-{3,}\s*$/gm, '')
+      .replace(/^\s*[-*]\s+/gm, '')
       .replace(/\*\*/g, '')
       .replace(
         /平台(?:抓到|识别到)?(?:就)?(?:可以|会)?直接(?:限流|中断直播|封禁|处罚)(?:或(?:限流|中断直播|封禁|处罚))*[。.]?/g,
@@ -505,8 +711,12 @@ export class ReportReactAgentService {
     return (
       segments.find(
         (segment: TranscriptSegmentSummary): boolean =>
+          segment.startSeconds === startSeconds,
+      ) ||
+      segments.find(
+        (segment: TranscriptSegmentSummary): boolean =>
           segment.startSeconds <= startSeconds &&
-          segment.endSeconds >= startSeconds,
+          segment.endSeconds > startSeconds,
       ) ||
       [...segments].sort(
         (left: TranscriptSegmentSummary, right: TranscriptSegmentSummary) =>

@@ -126,7 +126,7 @@ flowchart TD
 
 ### 报告追问 ReAct Agent
 
-报告追问使用 LangGraph `createReactAgent`，可自主选择报告总览、逐字稿检索、风险查询、框架查询、改写建议和 RAG 知识检索六个工具。ReAct 失败时回退到原单次问答，模型仍不可用时返回本地规则答案。这是一个受控的单 Agent，不是多 Agent 自由协作。
+报告追问使用 LangGraph `createReactAgent`，可自主选择报告总览、逐字稿检索、风险查询、框架查询、改写建议和 RAG 知识检索六个查证工具，再通过第七个结构化提交工具返回答案和证据 ID。Evidence Validator 核对 ID、工具读取记录、原话、时间点以及引用/否定语境；未提交、校验失败或 Agent 异常时直接返回本地报告答案，不放行未校验模型文本。这是一个受控的单 Agent，不是多 Agent 自由协作。
 
 ### RAG 知识类型
 
@@ -411,6 +411,7 @@ Bad Case ID：BC-YYYYMMDD-001
 | `client/src/pages/history/HistoryPage.tsx` | 历史报告列表 |
 | `server/modules/analysis/analysis.service.ts` | ASR 后分析、RAG、LangGraph 和后台任务主逻辑 |
 | `server/modules/analysis/report-react-agent.service.ts` | 报告追问 ReAct Agent、工具与降级策略 |
+| `server/modules/analysis/report-answer-evidence.validator.ts` | 追问答案的证据 ID、原话与时间点校验 |
 | `server/modules/analysis/rag-knowledge.provider.ts` | 当前知识文档与检索实现 |
 | `server/modules/auth/auth.service.ts` | 内部账号和会话 |
 | `server/modules/history/history.service.ts` | 历史报告持久化与权限过滤 |

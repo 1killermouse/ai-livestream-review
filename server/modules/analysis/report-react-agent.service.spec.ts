@@ -1,4 +1,3 @@
-import { AIMessage } from '@langchain/core/messages';
 import { createReactAgent } from '@langchain/langgraph/prebuilt';
 
 import type {
@@ -8,6 +7,7 @@ import type {
 
 import { DeepSeekAnalysisService } from './deepseek-analysis.service';
 import { RagKnowledgeProvider } from './rag-knowledge.provider';
+import { ReportAnswerEvidenceValidator } from './report-answer-evidence.validator';
 import { ReportReactAgentService } from './report-react-agent.service';
 
 jest.mock('@langchain/langgraph/prebuilt', () => ({
@@ -41,13 +41,24 @@ describe('ReportReactAgentService', () => {
           const transcriptTool = options.tools.find(
             (candidate) => candidate.name === 'search_transcript',
           );
+          const riskTool = options.tools.find(
+            (candidate) => candidate.name === 'inspect_risks',
+          );
+          const submitTool = options.tools.find(
+            (candidate) => candidate.name === 'submit_report_answer',
+          );
           await transcriptTool?.invoke({ query: '赚钱承诺', limit: 5 });
+          await riskTool?.invoke({ query: '赚钱承诺', limit: 5 });
+          await submitTool?.invoke({
+            answer:
+              '**00:12** 原话是“保证你一个月用AI赚钱。”，平台抓到可以直接封禁。',
+            segmentIds: ['segment-risk'],
+            findingIds: ['finding-1'],
+            frameworkStages: [],
+            confidence: 'high',
+          });
           return {
-            messages: [
-              new AIMessage(
-                '**00:12** 这句“保证你一个月赚钱”是高风险承诺，平台抓到可以直接封禁。',
-              ),
-            ],
+            messages: [],
           };
         },
       }),
@@ -55,6 +66,7 @@ describe('ReportReactAgentService', () => {
     const service = new ReportReactAgentService(
       deepSeekAnalysisService,
       ragKnowledgeProvider,
+      new ReportAnswerEvidenceValidator(),
     );
     const report: PrototypeAnalysisReport = createReport();
 
@@ -73,6 +85,7 @@ describe('ReportReactAgentService', () => {
           expect.objectContaining({ name: 'search_transcript' }),
           expect.objectContaining({ name: 'inspect_risks' }),
           expect.objectContaining({ name: 'inspect_rewrite_suggestions' }),
+          expect.objectContaining({ name: 'submit_report_answer' }),
         ]),
       }),
     );
@@ -83,6 +96,13 @@ describe('ReportReactAgentService', () => {
     expect(response.relatedSegments).toEqual([
       expect.objectContaining({ id: 'segment-risk' }),
     ]);
+    expect(response.evidence).toEqual({
+      validated: true,
+      confidence: 'high',
+      citationCount: 2,
+      fallbackUsed: false,
+      source: 'react_validated',
+    });
     expect(deepSeekAnalysisService.answerReportQuestion).not.toHaveBeenCalled();
   });
 
@@ -94,6 +114,7 @@ describe('ReportReactAgentService', () => {
     const service = new ReportReactAgentService(
       deepSeekAnalysisService,
       {} as RagKnowledgeProvider,
+      new ReportAnswerEvidenceValidator(),
     );
     const report: PrototypeAnalysisReport = createReport();
     const fallbackSegments: TranscriptSegmentSummary[] =
@@ -107,18 +128,51 @@ describe('ReportReactAgentService', () => {
     });
 
     expect(response.answer).toContain('课程承接这一环节');
-    expect(response.relatedSegments).toEqual(fallbackSegments);
+    expect(response.relatedSegments).toEqual([]);
+    expect(response.evidence).toEqual(
+      expect.objectContaining({
+        validated: true,
+        citationCount: 1,
+        fallbackUsed: true,
+      }),
+    );
     expect(mockCreateReactAgent).not.toHaveBeenCalled();
     expect(deepSeekAnalysisService.answerReportQuestion).not.toHaveBeenCalled();
   });
 
-  it('falls back to the stable model answer when the ReAct loop fails', async () => {
+  it('keeps warning examples separate from the host own promises in local fallback', async () => {
+    const deepSeekAnalysisService = {
+      isConfigured: jest.fn().mockReturnValue(false),
+    } as unknown as DeepSeekAnalysisService;
+    const service = new ReportReactAgentService(
+      deepSeekAnalysisService,
+      {} as RagKnowledgeProvider,
+      new ReportAnswerEvidenceValidator(),
+    );
+    const report: PrototypeAnalysisReport = createReport();
+    report.transcriptSegments[0].text =
+      '如果有人跟你说保证一个月赚钱，这种说法就要谨慎。';
+
+    const response = await service.answer({
+      report,
+      question: '这场直播最该先改哪三处？',
+      messages: [],
+      fallbackSegments: [],
+    });
+
+    expect(response.answer).toContain('不是主播自己的收益承诺');
+    expect(response.answer).toContain('真正要改的是表达方式');
+    expect(response.relatedSegments).toEqual([
+      expect.objectContaining({ id: 'segment-risk' }),
+    ]);
+    expect(response.evidence.fallbackUsed).toBe(true);
+  });
+
+  it('falls back to a local evidence-based answer when the ReAct loop fails', async () => {
     const deepSeekAnalysisService = {
       isConfigured: jest.fn().mockReturnValue(true),
       createToolCallingModel: jest.fn().mockReturnValue({}),
-      answerReportQuestion: jest
-        .fn()
-        .mockResolvedValue('本场最需要优先改收益承诺。'),
+      answerReportQuestion: jest.fn(),
     } as unknown as DeepSeekAnalysisService;
     mockCreateReactAgent.mockReturnValue({
       invoke: jest.fn().mockRejectedValue(new Error('tool calling failed')),
@@ -126,6 +180,7 @@ describe('ReportReactAgentService', () => {
     const service = new ReportReactAgentService(
       deepSeekAnalysisService,
       {} as RagKnowledgeProvider,
+      new ReportAnswerEvidenceValidator(),
     );
     const report: PrototypeAnalysisReport = createReport();
     const fallbackSegments: TranscriptSegmentSummary[] =
@@ -138,13 +193,60 @@ describe('ReportReactAgentService', () => {
       fallbackSegments,
     });
 
-    expect(response).toEqual({
-      answer: '本场最需要优先改收益承诺。',
-      relatedSegments: fallbackSegments,
-    });
-    expect(deepSeekAnalysisService.answerReportQuestion).toHaveBeenCalledTimes(
-      1,
+    expect(response.answer).toContain('保证你一个月用AI赚钱');
+    expect(response.evidence).toEqual(
+      expect.objectContaining({
+        validated: true,
+        fallbackUsed: true,
+      }),
     );
+    expect(deepSeekAnalysisService.answerReportQuestion).not.toHaveBeenCalled();
+  });
+
+  it('rejects an answer that submits unobserved evidence', async () => {
+    const deepSeekAnalysisService = {
+      isConfigured: jest.fn().mockReturnValue(true),
+      createToolCallingModel: jest.fn().mockReturnValue({}),
+      answerReportQuestion: jest.fn(),
+    } as unknown as DeepSeekAnalysisService;
+    mockCreateReactAgent.mockImplementation(
+      (options: {
+        tools: Array<{
+          name: string;
+          invoke: (input: unknown) => Promise<unknown>;
+        }>;
+      }) => ({
+        invoke: async () => {
+          const submitTool = options.tools.find(
+            (candidate) => candidate.name === 'submit_report_answer',
+          );
+          await submitTool?.invoke({
+            answer: '01:59 原话是“你肯定能赚钱”。',
+            segmentIds: ['segment-missing'],
+            findingIds: [],
+            frameworkStages: [],
+            confidence: 'high',
+          });
+          return { messages: [] };
+        },
+      }),
+    );
+    const service = new ReportReactAgentService(
+      deepSeekAnalysisService,
+      {} as RagKnowledgeProvider,
+      new ReportAnswerEvidenceValidator(),
+    );
+    const report: PrototypeAnalysisReport = createReport();
+
+    const response = await service.answer({
+      report,
+      question: '哪句赚钱承诺最危险？',
+      messages: [],
+      fallbackSegments: report.transcriptSegments.slice(0, 1),
+    });
+
+    expect(response.answer).not.toContain('01:59');
+    expect(response.evidence.fallbackUsed).toBe(true);
   });
 });
 

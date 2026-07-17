@@ -324,9 +324,26 @@ export interface ReportChatRequest {
   messages?: ReportChatMessage[];
 }
 
+export type ReportAnswerConfidence = 'high' | 'medium' | 'low';
+export type ReportChatFallbackReason =
+  | 'model_not_configured'
+  | 'submission_missing'
+  | 'validation_failed'
+  | 'agent_failed';
+
+export interface ReportChatEvidence {
+  validated: boolean;
+  confidence: ReportAnswerConfidence;
+  citationCount: number;
+  fallbackUsed: boolean;
+  source: 'react_validated' | 'local_fallback';
+  fallbackReason?: ReportChatFallbackReason;
+}
+
 export interface ReportChatResponse {
   answer: string;
   relatedSegments: TranscriptSegmentSummary[];
+  evidence: ReportChatEvidence;
 }
 
 export type LiveDataProvider =

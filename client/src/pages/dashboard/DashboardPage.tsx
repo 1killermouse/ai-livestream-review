@@ -72,6 +72,7 @@ import type {
   RecorderCaptureResult,
   RecorderCaptureStatus,
   ReportChatMessage,
+  ReportChatEvidence,
   ReportChatResponse,
   RiskLevel,
   ScriptFinding,
@@ -440,6 +441,9 @@ const DashboardPage: React.FC = () => {
   const [chatRelatedSegments, setChatRelatedSegments] = useState<
     TranscriptSegmentSummary[]
   >([]);
+  const [chatEvidence, setChatEvidence] = useState<ReportChatEvidence | null>(
+    null,
+  );
   const [chatting, setChatting] = useState<boolean>(false);
   const [syncingFeishu, setSyncingFeishu] = useState<boolean>(false);
   const [feishuSyncResult, setFeishuSyncResult] =
@@ -542,6 +546,7 @@ const DashboardPage: React.FC = () => {
     setChatMessages([]);
     setChatQuestion('');
     setChatRelatedSegments([]);
+    setChatEvidence(null);
     setFeishuSyncResult(null);
     setLiveDataReplay(null);
     setLiveDataError('');
@@ -913,6 +918,7 @@ const DashboardPage: React.FC = () => {
         messages: chatMessages.slice(-6),
       });
       setChatRelatedSegments(response.relatedSegments);
+      setChatEvidence(response.evidence);
       setChatMessages((current: ReportChatMessage[]) => [
         ...current,
         {
@@ -2300,6 +2306,13 @@ const DashboardPage: React.FC = () => {
               </div>
             ) : null}
           </div>
+
+          {chatEvidence?.validated ? (
+            <div className="flex items-center gap-2 text-sm font-medium text-emerald-700">
+              <ShieldCheck className="size-4" />
+              <span>已核对 {chatEvidence.citationCount} 项本场依据</span>
+            </div>
+          ) : null}
 
           {chatRelatedSegments.length > 0 ? (
             <section className="rounded-lg border border-border p-4">

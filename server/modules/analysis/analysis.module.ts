@@ -9,6 +9,7 @@ import { AnalysisService } from './analysis.service';
 import { DeepSeekAnalysisService } from './deepseek-analysis.service';
 import { LiveScriptPolicyProvider } from './live-script-policy.provider';
 import { RagKnowledgeProvider } from './rag-knowledge.provider';
+import { ReportAnswerEvidenceValidator } from './report-answer-evidence.validator';
 import { ReportReactAgentService } from './report-react-agent.service';
 
 @Module({
@@ -21,6 +22,7 @@ import { ReportReactAgentService } from './report-react-agent.service';
     DeepSeekAnalysisService,
     LiveScriptPolicyProvider,
     RagKnowledgeProvider,
+    ReportAnswerEvidenceValidator,
     ReportReactAgentService,
   ],
 })
