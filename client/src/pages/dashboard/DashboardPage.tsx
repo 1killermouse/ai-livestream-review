@@ -1,4 +1,5 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { lazy, Suspense, useEffect, useMemo, useState } from 'react';
+import type { AxiosError } from 'axios';
 import {
   Activity,
   AlertTriangle,
@@ -26,7 +27,6 @@ import {
   Video,
   WandSparkles,
 } from 'lucide-react';
-import { CartesianGrid, Line, LineChart, XAxis, YAxis } from 'recharts';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 
 import {
@@ -41,14 +41,6 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import {
-  ChartContainer,
-  ChartLegend,
-  ChartLegendContent,
-  ChartTooltip,
-  ChartTooltipContent,
-  type ChartConfig,
-} from '@/components/ui/chart';
 import { Input } from '@/components/ui/input';
 import { Progress } from '@/components/ui/progress';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -74,6 +66,7 @@ import type {
   ReportChatMessage,
   ReportChatEvidence,
   ReportChatResponse,
+  RhythmTimingIssue,
   RiskLevel,
   ScriptFinding,
   TranscriptSegmentSummary,
@@ -88,21 +81,35 @@ interface AnalysisProgressProps {
   uploading: boolean;
 }
 
+interface ApiErrorBody {
+  error?: { message?: string };
+  message?: string;
+}
+
+const LiveDataChart = lazy(() => import('./LiveDataChart'));
+
 const DEFAULT_FRAMEWORK_NAME = 'AI 知识付费直播全场转化框架';
 const ANALYSIS_JOB_POLL_INTERVAL_MS = 2000;
 const ANALYSIS_JOB_MAX_ATTEMPTS = 300;
 const MAX_RECORDING_FILE_SIZE_BYTES = 2 * 1024 * 1024 * 1024;
 
-const liveDataChartConfig = {
-  onlineUsers: {
-    label: '在线人数',
-    color: '#2563eb',
-  },
-  interactions: {
-    label: '互动量',
-    color: '#16a34a',
-  },
-} satisfies ChartConfig;
+const getErrorMessage = (error: unknown, fallback: string): string => {
+  const axiosError = error as AxiosError<ApiErrorBody>;
+  const responseMessage =
+    axiosError.response?.data?.error?.message ||
+    axiosError.response?.data?.message;
+  const message =
+    responseMessage || (error instanceof Error ? error.message : '');
+
+  if (
+    !message ||
+    message.length > 160 ||
+    /(api[_ -]?key|accesskey|secret|https?:\/\/)/i.test(message)
+  ) {
+    return fallback;
+  }
+  return message;
+};
 
 const formatTime = (seconds: number): string => {
   const minutes: number = Math.floor(seconds / 60);
@@ -184,6 +191,20 @@ const frameworkStatusVariant = (
     return 'outline';
   }
   return 'destructive';
+};
+
+const rhythmTimingLabel = (issue: RhythmTimingIssue): string => {
+  const labels: Record<RhythmTimingIssue, string> = {
+    on_track: '时间合理',
+    early: '出现偏早',
+    late: '出现偏晚',
+    too_long: '占用过长',
+    too_short: '内容偏短',
+    missing: '尚未出现',
+    not_applicable: '暂不判断',
+    unclear: '需要更多内容',
+  };
+  return labels[issue];
 };
 
 const findingTypeLabel = (finding: ScriptFinding): string => {
@@ -270,6 +291,9 @@ const buildReviewScript = (
   keepList: string[],
   avoidList: string[],
 ): string => {
+  if (report.reviewScript?.trim()) {
+    return report.reviewScript.trim();
+  }
   const firstFinding: ScriptFinding | undefined = report.findings[0];
   const topReplacement: string =
     firstFinding?.replacementScript ||
@@ -316,6 +340,15 @@ const getFeishuResultMessage = (result: FeishuSyncResult): string => {
 };
 
 const copyText = async (text: string): Promise<boolean> => {
+  if (navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch {
+      // Fall through for browsers that expose Clipboard API without permission.
+    }
+  }
+
   const textarea: HTMLTextAreaElement = document.createElement('textarea');
   textarea.value = text;
   textarea.setAttribute('readonly', '');
@@ -325,15 +358,7 @@ const copyText = async (text: string): Promise<boolean> => {
   textarea.select();
   const copied: boolean = document.execCommand('copy');
   document.body.removeChild(textarea);
-  if (copied) {
-    return true;
-  }
-
-  if (navigator.clipboard) {
-    await navigator.clipboard.writeText(text);
-    return true;
-  }
-  return false;
+  return copied;
 };
 
 const wait = (milliseconds: number): Promise<void> =>
@@ -790,8 +815,13 @@ const DashboardPage: React.FC = () => {
           fileUrl: uploadResult.fileUrl,
         });
       completeReport(result, false);
-    } catch {
-      setErrorMessage('录屏上传或识别失败，请检查文件格式和网络后再试。');
+    } catch (error: unknown) {
+      setErrorMessage(
+        getErrorMessage(
+          error,
+          '录屏上传或识别失败，请检查文件格式和网络后再试。',
+        ),
+      );
     } finally {
       setUploadingRecording(false);
       setSubmitting(false);
@@ -831,8 +861,13 @@ const DashboardPage: React.FC = () => {
           fileUrl: uploadedFile.fileUrl,
         });
       completeReport(result, false);
-    } catch {
-      setErrorMessage('这段录屏暂时没有分析成功，请确认录制已经结束后再试。');
+    } catch (error: unknown) {
+      setErrorMessage(
+        getErrorMessage(
+          error,
+          '这段录屏暂时没有分析成功，请确认录制已经结束后再试。',
+        ),
+      );
     } finally {
       setSubmitting(false);
       setAnalysisMode(null);
@@ -877,9 +912,12 @@ const DashboardPage: React.FC = () => {
         liveUrl: liveUrl.trim(),
       });
       setCaptureResult(result);
-    } catch {
+    } catch (error: unknown) {
       setErrorMessage(
-        '直播录制启动失败，请确认主播已经开播、链接可以正常打开。',
+        getErrorMessage(
+          error,
+          '直播录制启动失败，请确认主播已经开播、链接可以正常打开。',
+        ),
       );
     } finally {
       setStartingRecording(false);
@@ -1852,10 +1890,22 @@ const DashboardPage: React.FC = () => {
                     <Badge variant={frameworkStatusVariant(match.status)}>
                       {frameworkStatusLabel(match.status)}
                     </Badge>
+                    {match.timingIssue ? (
+                      <Badge variant="outline">
+                        {rhythmTimingLabel(match.timingIssue)}
+                      </Badge>
+                    ) : null}
                   </div>
                   {match.expectedWindow ? (
                     <p className="mt-2 text-xs text-muted-foreground">
                       建议时段：{match.expectedWindow}
+                    </p>
+                  ) : null}
+                  {match.actualStartSeconds !== undefined &&
+                  match.actualEndSeconds !== undefined ? (
+                    <p className="mt-1 text-xs font-medium">
+                      实际时段：{formatTime(match.actualStartSeconds)}-
+                      {formatTime(match.actualEndSeconds)}
                     </p>
                   ) : null}
                   <p className="mt-3 text-sm leading-6 text-muted-foreground">
@@ -2027,53 +2077,9 @@ const DashboardPage: React.FC = () => {
                     {liveDataReplay.points.length} 个采样点
                   </span>
                 </div>
-                <ChartContainer
-                  config={liveDataChartConfig}
-                  className="aspect-auto h-72 w-full"
-                >
-                  <LineChart
-                    data={liveDataReplay.points}
-                    margin={{
-                      top: 16,
-                      right: 18,
-                      bottom: 8,
-                      left: 8,
-                    }}
-                  >
-                    <CartesianGrid vertical={false} />
-                    <XAxis
-                      dataKey="timeLabel"
-                      tickLine={false}
-                      axisLine={false}
-                      tickMargin={8}
-                    />
-                    <YAxis
-                      tickLine={false}
-                      axisLine={false}
-                      tickMargin={8}
-                      width={42}
-                    />
-                    <ChartTooltip
-                      cursor={false}
-                      content={<ChartTooltipContent indicator="line" />}
-                    />
-                    <ChartLegend content={<ChartLegendContent />} />
-                    <Line
-                      dataKey="onlineUsers"
-                      type="monotone"
-                      stroke="var(--color-onlineUsers)"
-                      strokeWidth={2}
-                      dot={false}
-                    />
-                    <Line
-                      dataKey="interactions"
-                      type="monotone"
-                      stroke="var(--color-interactions)"
-                      strokeWidth={2}
-                      dot={false}
-                    />
-                  </LineChart>
-                </ChartContainer>
+                <Suspense fallback={<Skeleton className="h-72 w-full" />}>
+                  <LiveDataChart points={liveDataReplay.points} />
+                </Suspense>
               </div>
 
               <div className="rounded-lg bg-muted/40 p-4">

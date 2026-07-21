@@ -207,7 +207,6 @@ const Layout = () => {
             <NavLink
               to="/"
               end
-              reloadDocument
               className={({ isActive }) =>
                 'flex min-h-10 flex-1 items-center justify-center gap-2 rounded-md px-4 text-sm font-medium transition-colors duration-200 sm:flex-none ' +
                 (isActive

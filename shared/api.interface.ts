@@ -8,6 +8,18 @@ export type FindingType = 'banned_word' | 'semantic_risk' | 'framework_gap';
 
 export type RiskLevel = 'critical' | 'high' | 'medium' | 'low';
 
+export type AgentConfidence = 'high' | 'medium' | 'low';
+
+export type RhythmTimingIssue =
+  | 'on_track'
+  | 'early'
+  | 'late'
+  | 'too_long'
+  | 'too_short'
+  | 'missing'
+  | 'not_applicable'
+  | 'unclear';
+
 export type ReviewDomain = 'live_script_rewrite';
 
 export interface AccessProfile {
@@ -242,12 +254,19 @@ export interface ScriptFinding {
   analysis: string;
   suggestion: string;
   replacementScript: string;
+  rewriteEvidenceSegmentIds?: string[];
+  rewriteConfidence?: AgentConfidence;
 }
 
 export interface FrameworkMatchSummary {
   stageName: string;
   status: 'matched' | 'weak' | 'missing' | 'not_applicable';
   expectedWindow?: string;
+  actualStartSeconds?: number;
+  actualEndSeconds?: number;
+  evidenceSegmentIds?: string[];
+  timingIssue?: RhythmTimingIssue;
+  confidence?: AgentConfidence;
   evidence: string;
   suggestion: string;
 }
@@ -282,6 +301,7 @@ export interface PrototypeAnalysisReport {
   transcriptSegments: TranscriptSegmentSummary[];
   findings: ScriptFinding[];
   frameworkMatches: FrameworkMatchSummary[];
+  reviewScript?: string;
   ragReferences: RagReferenceSummary[];
   agentTrace: AgentTraceStep[];
 }
@@ -324,7 +344,7 @@ export interface ReportChatRequest {
   messages?: ReportChatMessage[];
 }
 
-export type ReportAnswerConfidence = 'high' | 'medium' | 'low';
+export type ReportAnswerConfidence = AgentConfidence;
 export type ReportChatFallbackReason =
   | 'model_not_configured'
   | 'submission_missing'

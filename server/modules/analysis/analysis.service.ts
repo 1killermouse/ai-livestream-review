@@ -26,36 +26,22 @@ import { DeepSeekAnalysisService } from './deepseek-analysis.service';
 import type { DomainPolicyProvider } from './domain-policy.interface';
 import { LiveScriptPolicyProvider } from './live-script-policy.provider';
 import { RagKnowledgeProvider } from './rag-knowledge.provider';
+import { isWarningOrRefutationContext } from './report-answer-evidence.validator';
 import { ReportReactAgentService } from './report-react-agent.service';
+import {
+  RewriteAdviceAgentService,
+  type RewriteAgentResult,
+} from './rewrite-advice-agent.service';
+import {
+  RhythmAnalysisAgentService,
+  type RhythmAgentResult,
+} from './rhythm-analysis-agent.service';
 import { HistoryService } from '../history/history.service';
-
-const AnalysisState = Annotation.Root({
-  sessionId: Annotation<string>,
-  completedSteps: Annotation<string[]>({
-    reducer: (left: string[], right: string[]): string[] => [...left, ...right],
-    default: (): string[] => [],
-  }),
-});
-
-const analysisGraph = new StateGraph(AnalysisState)
-  .addNode('prepare', (state) => ({
-    completedSteps: ['prepare'],
-  }))
-  .addNode('retrieve', (state) => ({
-    completedSteps: ['retrieve'],
-  }))
-  .addNode('assess', (state) => ({
-    completedSteps: ['assess'],
-  }))
-  .addEdge(START, 'prepare')
-  .addEdge('prepare', 'retrieve')
-  .addEdge('retrieve', 'assess')
-  .addEdge('assess', END)
-  .compile();
 
 const DEFAULT_FRAMEWORK_NAME = 'AI 知识付费直播全场转化框架';
 const MAX_IN_MEMORY_ANALYSIS_JOBS = 20;
 const ANALYSIS_JOB_TTL_MS = 24 * 60 * 60 * 1000;
+const MAX_RAG_QUERY_CHARS = 6000;
 
 interface TimelineStageRule {
   stageName: string;
@@ -85,14 +71,12 @@ export class AnalysisService {
     private readonly ragKnowledgeProvider: RagKnowledgeProvider,
     private readonly deepSeekAnalysisService: DeepSeekAnalysisService,
     private readonly reportReactAgentService: ReportReactAgentService,
+    private readonly rhythmAnalysisAgentService: RhythmAnalysisAgentService,
+    private readonly rewriteAdviceAgentService: RewriteAdviceAgentService,
     private readonly historyService: HistoryService,
   ) {}
 
   async getCapability(): Promise<AnalysisCapability> {
-    await analysisGraph.invoke({
-      sessionId: 'capability-check',
-      completedSteps: [],
-    });
     return {
       langchain: true,
       langgraph: true,
@@ -182,6 +166,8 @@ export class AnalysisService {
       transcriptSegments,
       findings,
       frameworkMatches,
+      reviewScript:
+        '前面继续保留 AI 工具和提示词案例，让用户先听懂方法价值。讲到课程时，把训练内容、作业反馈和适合人群说清楚，不要承诺确定收益。涉及工具效果时可以直接说：“AI 能提高内容生产效率，但选题判断、内容修改和最终交付仍然需要人来完成。”',
       ragReferences,
       agentTrace,
     };
@@ -344,6 +330,7 @@ export class AnalysisService {
       transcriptSegments: TranscriptSegmentSummary[];
       findings: ScriptFinding[];
       frameworkMatches: FrameworkMatchSummary[];
+      reviewScript: string;
       ragReferences: RagReferenceSummary[];
       agentTrace: AgentTraceStep[];
     } = await this.runReportAgent(transcriptSegments, {
@@ -390,6 +377,7 @@ export class AnalysisService {
       transcriptSegments: enrichedSegments,
       findings,
       frameworkMatches,
+      reviewScript: agentResult.reviewScript,
       ragReferences: agentResult.ragReferences,
       agentTrace: agentResult.agentTrace,
     };
@@ -402,6 +390,9 @@ export class AnalysisService {
     try {
       const transcriptSegments: TranscriptSegmentSummary[] =
         await this.aliyunAsrService.transcribeFileUrl(request.fileUrl.trim());
+      if (transcriptSegments.length === 0) {
+        throw new Error('录屏中没有识别到可以分析的主播话术');
+      }
       this.updateAnalysisJob(jobId, {
         phase: 'analyzing',
       });
@@ -419,12 +410,16 @@ export class AnalysisService {
         phase: 'completed',
         report: savedReport,
       });
-    } catch {
+    } catch (error: unknown) {
+      const message: string =
+        error instanceof Error ? error.message.trim() : '';
       this.updateAnalysisJob(jobId, {
         status: 'failed',
         phase: 'failed',
         errorMessage:
-          '录屏转写或分析没有完成，请检查文件链接、ASR 配置和音频质量后重试。',
+          message === '录屏中没有识别到可以分析的主播话术'
+            ? message
+            : '录屏转写或分析没有完成，请检查文件链接、ASR 配置和音频质量后重试。',
       });
     }
   }
@@ -485,6 +480,7 @@ export class AnalysisService {
     transcriptSegments: TranscriptSegmentSummary[];
     findings: ScriptFinding[];
     frameworkMatches: FrameworkMatchSummary[];
+    reviewScript: string;
     ragReferences: RagReferenceSummary[];
     agentTrace: AgentTraceStep[];
   }> {
@@ -494,6 +490,7 @@ export class AnalysisService {
       customFramework: Annotation<string | undefined>(),
       findings: Annotation<ScriptFinding[]>(),
       frameworkMatches: Annotation<FrameworkMatchSummary[]>(),
+      reviewScript: Annotation<string>(),
       ragReferences: Annotation<RagReferenceSummary[]>(),
       agentTrace: Annotation<AgentTraceStep[]>({
         reducer: (
@@ -562,6 +559,26 @@ export class AnalysisService {
           ],
         };
       })
+      .addNode('diagnose_rhythm', async (state) => {
+        const result: RhythmAgentResult =
+          await this.rhythmAnalysisAgentService.analyze({
+            transcriptSegments: state.transcriptSegments,
+            frameworkName: state.frameworkName,
+            customFramework: state.customFramework,
+            baselineMatches: state.frameworkMatches,
+            ragReferences: state.ragReferences,
+          });
+        return {
+          frameworkMatches: result.frameworkMatches,
+          agentTrace: [
+            {
+              nodeName: '节奏诊断 ReAct Agent',
+              status: 'completed' as const,
+              output: result.statusText,
+            },
+          ],
+        };
+      })
       .addNode('assess_risk', async (state) => {
         const ruleFindings: ScriptFinding[] = this.detectFindings(
           state.transcriptSegments,
@@ -576,9 +593,9 @@ export class AnalysisService {
           frameworkMatches: state.frameworkMatches,
           ragReferences: state.ragReferences,
         });
-        const findings: ScriptFinding[] = this.mergeFindings(
-          ruleFindings,
-          deepSeekResult.findings,
+        const findings: ScriptFinding[] = this.removeContextualFalsePositives(
+          this.mergeFindings(ruleFindings, deepSeekResult.findings),
+          state.transcriptSegments,
         );
         const ragReferences: RagReferenceSummary[] =
           await this.retrieveRagReferences(state.transcriptSegments, findings);
@@ -598,18 +615,30 @@ export class AnalysisService {
           ],
         };
       })
-      .addNode('rewrite_advice', (state) => ({
-        agentTrace: [
-          {
-            nodeName: '整改建议 Agent',
-            status: 'completed' as const,
-            output: `生成 ${state.findings.length} 条主播可直接替换的话术建议。`,
-          },
-        ],
-      }))
+      .addNode('rewrite_advice', async (state) => {
+        const result: RewriteAgentResult =
+          await this.rewriteAdviceAgentService.rewrite({
+            transcriptSegments: state.transcriptSegments,
+            findings: state.findings,
+            frameworkMatches: state.frameworkMatches,
+            ragReferences: state.ragReferences,
+          });
+        return {
+          findings: result.findings,
+          reviewScript: result.reviewScript,
+          agentTrace: [
+            {
+              nodeName: '整改话术 ReAct Agent',
+              status: 'completed' as const,
+              output: result.statusText,
+            },
+          ],
+        };
+      })
       .addEdge(START, 'prepare_transcript')
       .addEdge('prepare_transcript', 'retrieve_framework')
-      .addEdge('retrieve_framework', 'assess_risk')
+      .addEdge('retrieve_framework', 'diagnose_rhythm')
+      .addEdge('diagnose_rhythm', 'assess_risk')
       .addEdge('assess_risk', 'rewrite_advice')
       .addEdge('rewrite_advice', END)
       .compile();
@@ -620,6 +649,7 @@ export class AnalysisService {
       customFramework: options.customFramework,
       findings: [],
       frameworkMatches: [],
+      reviewScript: '',
       ragReferences: [],
       agentTrace: [],
     });
@@ -629,13 +659,49 @@ export class AnalysisService {
     segments: TranscriptSegmentSummary[],
     findings: ScriptFinding[],
   ): Promise<RagReferenceSummary[]> {
-    const query: string = [
-      ...segments.map(
+    const query: string = this.buildRagQuery(segments, findings);
+    return this.ragKnowledgeProvider.retrieve(query, 6);
+  }
+
+  private buildRagQuery(
+    segments: TranscriptSegmentSummary[],
+    findings: ScriptFinding[],
+  ): string {
+    const sampleStep: number = Math.max(1, Math.ceil(segments.length / 12));
+    const sampledSegments: TranscriptSegmentSummary[] = segments.filter(
+      (_segment: TranscriptSegmentSummary, index: number): boolean =>
+        index % sampleStep === 0,
+    );
+    const domainSegments: TranscriptSegmentSummary[] = segments.filter(
+      (segment: TranscriptSegmentSummary): boolean =>
+        /AI|课程|训练营|权益|价格|交付|陪跑|答疑|案例|学员|宝妈|副业|赚钱|变现|回本|接单|爆款|保证|一定|报名|名额|微信/.test(
+          segment.text,
+        ),
+    );
+    const candidates: string[] = [
+      ...findings.map((finding: ScriptFinding): string => finding.originalText),
+      ...domainSegments.map(
         (segment: TranscriptSegmentSummary): string => segment.text,
       ),
-      ...findings.map((finding: ScriptFinding): string => finding.originalText),
-    ].join(' ');
-    return this.ragKnowledgeProvider.retrieve(query, 6);
+      ...sampledSegments.map(
+        (segment: TranscriptSegmentSummary): string => segment.text,
+      ),
+    ];
+    const uniqueTexts: Set<string> = new Set<string>();
+    let charCount: number = 0;
+    for (const candidate of candidates) {
+      const text: string = candidate.trim();
+      if (!text || uniqueTexts.has(text)) {
+        continue;
+      }
+      const remainingChars: number = MAX_RAG_QUERY_CHARS - charCount;
+      if (remainingChars <= 0) {
+        break;
+      }
+      uniqueTexts.add(text.slice(0, remainingChars));
+      charCount += Math.min(text.length, remainingChars);
+    }
+    return [...uniqueTexts].join('\n');
   }
 
   private getRagModeLabel(): string {
@@ -688,6 +754,25 @@ export class AnalysisService {
       findings.push(finding);
     }
     return findings;
+  }
+
+  private removeContextualFalsePositives(
+    findings: ScriptFinding[],
+    segments: TranscriptSegmentSummary[],
+  ): ScriptFinding[] {
+    return findings.filter((finding: ScriptFinding): boolean => {
+      const segment: TranscriptSegmentSummary | undefined =
+        segments.find(
+          (candidate: TranscriptSegmentSummary): boolean =>
+            candidate.startSeconds === finding.startSeconds,
+        ) ||
+        segments.find(
+          (candidate: TranscriptSegmentSummary): boolean =>
+            candidate.startSeconds <= finding.startSeconds &&
+            candidate.endSeconds > finding.startSeconds,
+        );
+      return !segment || !isWarningOrRefutationContext(segment.text);
+    });
   }
 
   private detectFindings(
@@ -1070,13 +1155,6 @@ export class AnalysisService {
 
   private inferSegmentStage(text: string): string {
     if (
-      /(AI|提示词|工具|模板|SOP|流程|工作流|实操|教程|抖音|剪辑|文案|获客|内容)/.test(
-        text,
-      )
-    ) {
-      return '干货输出';
-    }
-    if (
       /(课程|训练营|陪跑|社群|录播|直播课|作业|点评|答疑|权益|工具包|报名)/.test(
         text,
       )
@@ -1090,6 +1168,13 @@ export class AnalysisService {
       /(下单|链接|咨询|名额|活动|截止|最后|现在拍|课程详情|平台规则)/.test(text)
     ) {
       return '成交承接';
+    }
+    if (
+      /(AI|人工智能|提示词|工具|模板|SOP|流程|工作流|实操|教程|抖音|剪辑|文案|获客|内容)/.test(
+        text,
+      )
+    ) {
+      return '干货输出';
     }
     return '互动承接';
   }
@@ -1138,14 +1223,19 @@ export class AnalysisService {
           '检索 AI 知识付费直播全场框架，按 0-60 干货、60-84 课程权益、84-90 案例人设、90 分钟后成交承接判断。',
       },
       {
+        nodeName: '节奏诊断 ReAct Agent',
+        status: 'completed',
+        output: '结合框架时间窗和逐字稿证据，判断阶段覆盖与实际节奏。',
+      },
+      {
         nodeName: '风险判断 Agent',
         status: 'completed',
         output: `识别 ${findings.length} 个样例风险点，覆盖违禁词、语义风险和框架缺口。`,
       },
       {
-        nodeName: '整改建议 Agent',
+        nodeName: '整改话术 ReAct Agent',
         status: 'completed',
-        output: `生成 ${findings.length} 条可替换话术，方便主播直接照着改。`,
+        output: `结合风险和节奏生成 ${findings.length} 条可替换话术及整段复盘改稿。`,
       },
     ];
   }
@@ -1235,6 +1325,11 @@ export class AnalysisService {
         stageName: '集中输出 AI 干货',
         status: 'matched',
         expectedWindow: '0-60 分钟',
+        actualStartSeconds: 0,
+        actualEndSeconds: 224,
+        evidenceSegmentIds: ['asr-1', 'asr-2', 'asr-3'],
+        timingIssue: 'on_track',
+        confidence: 'high',
         evidence: '样例中包含 AI 工具、提示词和实操路径内容。',
         suggestion: '继续保持干货密度，让用户先感知价值，再承接课程。',
       },
@@ -1242,6 +1337,9 @@ export class AnalysisService {
         stageName: '课程承接与权益说明',
         status: 'not_applicable',
         expectedWindow: '60-84 分钟',
+        evidenceSegmentIds: [],
+        timingIssue: 'not_applicable',
+        confidence: 'high',
         evidence: '样例片段时长不足 60 分钟，暂不强判课程承接缺失。',
         suggestion: '60 分钟后再集中讲课程交付、权益、服务周期和报名路径。',
       },
@@ -1249,6 +1347,9 @@ export class AnalysisService {
         stageName: '成功案例与人设强化',
         status: 'not_applicable',
         expectedWindow: '84-90 分钟',
+        evidenceSegmentIds: [],
+        timingIssue: 'not_applicable',
+        confidence: 'high',
         evidence: '样例片段尚未进入 84-90 分钟窗口，暂不强判案例人设缺失。',
         suggestion: '案例要继续立人设，但必须说明背景、投入和不可保证复制。',
       },
@@ -1256,6 +1357,9 @@ export class AnalysisService {
         stageName: '持续成交承接',
         status: 'not_applicable',
         expectedWindow: '90 分钟后',
+        evidenceSegmentIds: [],
+        timingIssue: 'not_applicable',
+        confidence: 'high',
         evidence: '样例片段尚未进入 90 分钟后的成交承接窗口，暂不强判。',
         suggestion:
           '后续可以持续成交承接，但要控制过度逼单、虚假稀缺和站外交易风险。',

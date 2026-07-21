@@ -28,20 +28,16 @@ npm ci --ignore-scripts
 # 创建 .env.local，下载固定版本录制器并安装 Python 依赖
 npm run setup:local
 
-# 在 .env.local 填写 SUDA_DATABASE_URL，并初始化账号与历史报告表
-psql '你的 PostgreSQL 连接地址' -f server/database/migrations/002_standalone_auth_history.sql
-
 # 填写自己的云服务密钥后，独立启动前后端
 npm run dev:standalone
 ```
 
-`dev:standalone` 使用固定的 `/app/` 本地路径，等待页面真正可访问后才输出 `http://127.0.0.1:8081/app/`。它只在本地开发进程中注入固定测试身份和 CSRF Cookie，不需要妙搭登录或私人预览 Session。该逻辑不会在 `dev:local`、沙箱或生产构建中启用。
+`dev:standalone` 使用固定的 `/app/` 本地路径，等待页面真正可访问后才输出 `http://127.0.0.1:8081/app/`。它只在本地开发进程中注入固定测试身份和 CSRF Cookie，不需要妙搭登录或私人预览 Session。未配置 PostgreSQL 或连接失效时，账号、会话和历史报告会自动保存在 `.local/standalone-data.json`。该逻辑不会在 `dev:local`、沙箱或生产构建中启用。
 
 只看完整示例时，可以跳过录制器安装：
 
 ```bash
 cp .env.example .env.local
-psql '你的 PostgreSQL 连接地址' -f server/database/migrations/002_standalone_auth_history.sql
 npm run dev:standalone
 ```
 

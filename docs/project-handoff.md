@@ -85,7 +85,7 @@ flowchart TD
 | 违禁词规则 | 已接入 | 当前是 AI 知识付费 MVP 词库，需要持续维护 |
 | 语义风险 | 已接入 | DeepSeek 结构化分析，失败时退回本地规则 |
 | RAG | 已接入 | `text-embedding-v4` + 进程内向量索引 + 关键词兜底 |
-| LangGraph | 已接入 | 主分析为固定四节点；报告追问为工具调用型 ReAct Agent |
+| LangGraph | 已接入 | 主分析为固定五节点；节奏、整改和报告追问为受控 ReAct Agent |
 | 自定义框架 | 部分完成 | 支持单场文本输入，未做文档解析、持久化和版本管理 |
 | 节奏分析 | 已接入 | 时间戳为主、文字量和语义为辅；短录屏不强判后续阶段缺失 |
 | 报告追问 | 已接入 | 围绕当前报告和相关时间点回答 |
@@ -113,16 +113,17 @@ flowchart TD
 
 ## 7. AI、RAG 与 Agent 的真实实现
 
-### 四节点主分析工作流
+### 五节点主分析工作流
 
 | 节点 | 工作内容 | 是否调用模型 |
 | --- | --- | --- |
 | 转写整理 Agent | 清洗 ASR 分段、保留时间戳、补充阶段标签和字数 | 否，确定性代码 |
 | 框架检索 Agent | 对齐框架阶段，召回框架、风险规则和案例边界 | Embedding；失败后关键词兜底 |
+| 节奏诊断 ReAct Agent | 自主查看时间窗、框架、逐字稿与 RAG，提交实际时段和节奏结论 | 是；校验失败后时间戳规则兜底 |
 | 风险判断 Agent | 合并本地规则和 DeepSeek 语义风险 | 是 |
-| 整改建议 Agent | 汇总替换建议并形成报告链路 | 目前主要使用上一步结构化结果 |
+| 整改话术 ReAct Agent | 结合风险和节奏生成逐条替换及整段可播改稿 | 是；校验失败后本地话术兜底 |
 
-这条主链使用 LangGraph 的意义是让流程、状态和节点职责可观察、可替换，不让多个 Agent 自由对话。
+节奏 Agent 必须提交真实逐字稿 ID，实际时间由服务端重新计算；整改 Agent 必须引用已读取的风险和语境，新增收益保证会被拦截。两者都是固定工作流中的受控 ReAct，不进行多 Agent 自由对话。
 
 ### 报告追问 ReAct Agent
 
@@ -152,7 +153,7 @@ flowchart TD
 | 前端 | React 19、Vite、TypeScript、Tailwind CSS、Radix UI、Recharts |
 | 后端 | NestJS、TypeScript |
 | 工作流 | LangChain、LangGraph |
-| 数据库 | PostgreSQL、Drizzle；当前复用 `ruleDocuments` 存账号、会话和报告 |
+| 数据库 | PostgreSQL、Drizzle；当前复用 `ruleDocuments` 存账号、会话和报告；独立模式支持本地 JSON 持久化兜底 |
 | ASR | 阿里百炼 `paraformer-v2` |
 | Embedding | 阿里 `text-embedding-v4`，默认 1024 维 |
 | 语义模型 | DeepSeek Chat Completions |
@@ -167,6 +168,7 @@ flowchart TD
 - 向量索引保存在进程内，不是独立向量数据库。
 - 长录屏通过后台任务和前端轮询处理，前端每 2 秒查询状态。
 - 报告和账号已持久化，但当前借用兼容表结构，生产化应拆成独立表。
+- `dev:standalone` 在 PostgreSQL 未配置、过期或不可用时自动切换到 `.local/standalone-data.json`，保证账号登录和历史报告可演示；正式部署仍使用 PostgreSQL。
 - 示例入口使用固定数据，不调用外部模型，保证低成本稳定演示。
 
 ## 9. 当前项目状态
@@ -182,7 +184,7 @@ flowchart TD
 ### 最近一次验证
 
 - ESLint、Stylelint、前后端 TypeScript 检查通过。
-- Jest：6 个测试套件、11 项测试通过。
+- Jest：13 个测试套件、33 项测试通过。
 - 正式构建通过。
 - 本地首页和登录状态接口返回 `200`。
 - 浏览器验证：首页来源切换、框架设置、示例报告六个视图、历史空状态可正常使用，控制台无错误。
@@ -191,8 +193,8 @@ flowchart TD
 
 - 仓库：`1killermouse/ai-livestream-review`。
 - 当前本地分支：`sprint/default`。
-- 当前远端 `main` 停在提交 `192c6bb`。
-- 本地还有一轮未提交的 UI 优化，GitHub 暂时不是本机最新界面。
+- 当前本地与远端 `main` 基线均为提交 `20a41d3`。
+- 本地包含尚未提交的节奏/整改 ReAct、本地持久化兜底和配套测试，GitHub 暂时不是本机最新代码。
 - 本地运行地址：`http://127.0.0.1:8081/app/`。
 - 启动命令必须在项目目录执行：`npm run dev:standalone`。
 
@@ -390,11 +392,11 @@ Bad Case ID：BC-YYYYMMDD-001
 ```text
 我正在做一个个人独立项目：AI 知识付费直播复盘。
 
-目标用户是 AI 课程、训练营和陪跑类主播。主播提交直播链接或录屏后，系统用阿里 paraformer-v2 生成带时间戳逐字稿，再通过本地违禁词规则、text-embedding-v4 RAG、DeepSeek 语义分析和 LangGraph 四节点固定工作流，输出风险原话、节奏时间轴和可直接使用的整改话术。
+目标用户是 AI 课程、训练营和陪跑类主播。主播提交直播链接或录屏后，系统用阿里 paraformer-v2 生成带时间戳逐字稿，再通过本地违禁词规则、text-embedding-v4 RAG、DeepSeek 语义分析和 LangGraph 五节点固定工作流，输出风险原话、节奏时间轴和可直接使用的整改话术。
 
-当前已经完成 Web 端主流程、DouyinLiveRecorder 链接录制、2 GB 分片上传、OSS、带时间戳 ASR、RAG、DeepSeek、四节点主分析工作流、ReAct 报告追问、本地规则兜底、内部管理员/主播账号、历史报告和飞书同步。第三方直播数据仍是明确标注的模拟数据；自定义框架只支持单场文本输入；任务和向量索引仍保存在进程内；不分析视频画面。
+当前已经完成 Web 端主流程、DouyinLiveRecorder 链接录制、2 GB 分片上传、OSS、带时间戳 ASR、RAG、DeepSeek、五节点主分析工作流、节奏诊断 ReAct、整改话术 ReAct、ReAct 报告追问、本地规则兜底、内部管理员/主播账号、历史报告和飞书同步。第三方直播数据仍是明确标注的模拟数据；自定义框架只支持单场文本输入；任务和向量索引仍保存在进程内；不分析视频画面。
 
-产品原则：ASR 时间戳判断真实时长，文字量只判断信息密度；主分析保持固定流程，只在追问中使用受控 ReAct；规则负责确定性风险，大模型负责上下文语义；报告必须给出原话、时间点、原因和可播改法。
+产品原则：ASR 时间戳判断真实时长，文字量只判断信息密度；节奏、整改和追问使用固定边界内的受控 ReAct；规则负责确定性风险，大模型负责上下文语义；所有 Agent 结果必须结构化并保留本地兜底。
 
 请基于这些事实帮我写文档，不要把演示能力写成真实接入，不要把启发式安全分写成平台官方结论，也不要虚构尚未执行的评测结果。
 ```
@@ -411,8 +413,11 @@ Bad Case ID：BC-YYYYMMDD-001
 | `client/src/pages/history/HistoryPage.tsx` | 历史报告列表 |
 | `server/modules/analysis/analysis.service.ts` | ASR 后分析、RAG、LangGraph 和后台任务主逻辑 |
 | `server/modules/analysis/report-react-agent.service.ts` | 报告追问 ReAct Agent、工具与降级策略 |
+| `server/modules/analysis/rhythm-analysis-agent.service.ts` | 节奏诊断 ReAct Agent、时间窗工具与证据校验 |
+| `server/modules/analysis/rewrite-advice-agent.service.ts` | 整改话术 ReAct Agent、逐条改写与整段改稿校验 |
 | `server/modules/analysis/report-answer-evidence.validator.ts` | 追问答案的证据 ID、原话与时间点校验 |
 | `server/modules/analysis/rag-knowledge.provider.ts` | 当前知识文档与检索实现 |
 | `server/modules/auth/auth.service.ts` | 内部账号和会话 |
 | `server/modules/history/history.service.ts` | 历史报告持久化与权限过滤 |
+| `server/modules/standalone-store/standalone-store.service.ts` | 本地独立模式账号、会话和历史报告持久化兜底 |
 | `shared/api.interface.ts` | 前后端共享协议 |

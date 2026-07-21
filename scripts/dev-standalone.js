@@ -42,16 +42,23 @@ process.env.SERVER_HOST ||= 'localhost';
 const localUrl = `http://127.0.0.1:${process.env.CLIENT_DEV_PORT}/app/`;
 
 async function waitForFrontend() {
+  let consecutiveSuccesses = 0;
   for (let attempt = 0; attempt < 60; attempt += 1) {
     try {
       const response = await fetch(localUrl, {
         headers: { Accept: 'text/html' },
       });
       if (response.ok) {
-        console.log(`\n[dev:standalone] 页面已就绪：${localUrl}\n`);
-        return;
+        consecutiveSuccesses += 1;
+        if (consecutiveSuccesses >= 3) {
+          console.log(`\n[dev:standalone] 页面已就绪：${localUrl}\n`);
+          return;
+        }
+      } else {
+        consecutiveSuccesses = 0;
       }
     } catch {
+      consecutiveSuccesses = 0;
       // The frontend is still compiling.
     }
     await new Promise((resolve) => setTimeout(resolve, 500));
@@ -74,7 +81,7 @@ const child = spawn(
     'blue,green',
     '--kill-others-on-fail',
     'npm run dev:server',
-    'npm run dev:client',
+    'npm run dev:client:after-server',
   ],
   {
     cwd: projectRoot,

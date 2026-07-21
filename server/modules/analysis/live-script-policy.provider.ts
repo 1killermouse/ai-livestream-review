@@ -15,9 +15,10 @@ export class LiveScriptPolicyProvider implements DomainPolicyProvider {
       'transcribe-with-aliyun-asr',
       'select-or-upload-script-framework',
       'retrieve-framework-rules-and-templates',
+      'diagnose-rhythm-with-react-agent',
       'scan-banned-words',
       'assess-semantic-risk',
-      'generate-rewrite-suggestions',
+      'generate-rewrite-with-react-agent',
     ];
   }
 

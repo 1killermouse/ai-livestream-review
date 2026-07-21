@@ -14,6 +14,7 @@
     "dev:standalone": "node ./scripts/dev-standalone.js",
     "dev:server": "NODE_ENV=development nest start --watch",
     "dev:client": "NODE_ENV=development vite --config vite.config.ts",
+    "dev:client:after-server": "node ./scripts/wait-for-server.js && npm run dev:client",
     "gen:db-schema": "npx -y @lark-apaas/db-schema-sync@latest --output server/database/schema.ts --export-custom-types",
     "gen:openapi": "echo 'UNSUPPORTED, SKIP'",
     "build": "./scripts/build.sh",
@@ -213,7 +214,11 @@
     "testMatch": [
       "<rootDir>/server/**/*.spec.ts",
       "<rootDir>/test/unit/**/*.spec.ts"
-    ]
+    ],
+    "moduleNameMapper": {
+      "^@server/(.*)$": "<rootDir>/server/$1",
+      "^@shared/(.*)$": "<rootDir>/shared/$1"
+    }
   },
   "engines": {
     "node": ">=22.0.0",

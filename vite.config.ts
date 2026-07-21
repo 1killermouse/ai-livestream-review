@@ -43,4 +43,36 @@ export default defineConfig({
       '@': path.resolve(__dirname, 'client/src'),
     },
   },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks(id: string) {
+          if (!id.includes('node_modules')) {
+            return undefined;
+          }
+          if (id.includes('@lark-apaas')) {
+            return 'lark-runtime';
+          }
+          if (
+            /node_modules\/(react|react-dom|react-router|react-router-dom|scheduler|react-error-boundary)\//.test(
+              id,
+            )
+          ) {
+            return 'react-vendor';
+          }
+          if (
+            id.includes('@radix-ui') ||
+            id.includes('@floating-ui') ||
+            id.includes('/sonner/')
+          ) {
+            return 'ui-vendor';
+          }
+          if (id.includes('/axios/')) {
+            return 'network-vendor';
+          }
+          return undefined;
+        },
+      },
+    },
+  },
 });

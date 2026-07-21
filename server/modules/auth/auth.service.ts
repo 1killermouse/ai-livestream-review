@@ -6,7 +6,7 @@ import {
   timingSafeEqual,
 } from 'node:crypto';
 
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import {
   DRIZZLE_DATABASE,
   type PostgresJsDatabase,
@@ -16,6 +16,11 @@ import { and, count, desc, eq } from 'drizzle-orm';
 import { ResponseCode } from '@server/common/constants/api_response_code';
 import { BusinessException } from '@server/common/interfaces/exception.interface';
 import { ruleDocuments } from '@server/database/schema';
+import {
+  StandaloneStoreService,
+  type StandaloneAccountRecord,
+  type StandaloneSessionRecord,
+} from '@server/modules/standalone-store/standalone-store.service';
 import type {
   BootstrapAccountRequest,
   CreateInternalAccountRequest,
@@ -51,17 +56,31 @@ interface AuthenticatedAccount {
 
 @Injectable()
 export class AuthService {
+  private readonly logger: Logger = new Logger(AuthService.name);
+  private useLocalStore: boolean = false;
+
   constructor(
     @Inject(DRIZZLE_DATABASE)
     private readonly db: PostgresJsDatabase,
+    private readonly standaloneStore: StandaloneStoreService,
   ) {}
 
   async isInitialized(): Promise<boolean> {
-    const rows: Array<{ count: number | string }> = await this.db
-      .select({ count: count() })
-      .from(ruleDocuments)
-      .where(eq(ruleDocuments.sourceType, ACCOUNT_SOURCE_TYPE));
-    return Number(rows[0]?.count ?? 0) > 0;
+    if (this.useLocalStore) {
+      return this.standaloneStore.hasAccounts();
+    }
+    try {
+      const rows: Array<{ count: number | string }> = await this.db
+        .select({ count: count() })
+        .from(ruleDocuments)
+        .where(eq(ruleDocuments.sourceType, ACCOUNT_SOURCE_TYPE));
+      return Number(rows[0]?.count ?? 0) > 0;
+    } catch (error: unknown) {
+      if (!this.activateLocalStore(error)) {
+        throw error;
+      }
+      return this.standaloneStore.hasAccounts();
+    }
   }
 
   async bootstrap(
@@ -83,8 +102,14 @@ export class AuthService {
 
   async login(request: LoginRequest): Promise<AuthenticatedAccount> {
     const username: string = this.normalizeUsername(request.username);
+    if (this.useLocalStore) {
+      return this.loginLocally(username, request.password || '');
+    }
     const row: typeof ruleDocuments.$inferSelect | undefined =
       await this.findAccountRowByUsername(username);
+    if (this.useLocalStore) {
+      return this.loginLocally(username, request.password || '');
+    }
     const account: AccountDocument | undefined = row
       ? this.parseDocument<AccountDocument>(row.content)
       : undefined;
@@ -111,71 +136,94 @@ export class AuthService {
       return undefined;
     }
 
-    const tokenHash: string = this.hashToken(token);
-    const sessionRows: Array<typeof ruleDocuments.$inferSelect> = await this.db
-      .select()
-      .from(ruleDocuments)
-      .where(
-        and(
-          eq(ruleDocuments.sourceType, SESSION_SOURCE_TYPE),
-          eq(ruleDocuments.title, tokenHash),
-          eq(ruleDocuments.status, 'active'),
-        ),
-      )
-      .limit(1);
-    const sessionRow: typeof ruleDocuments.$inferSelect | undefined =
-      sessionRows[0];
-    const session: SessionDocument | undefined = sessionRow
-      ? this.parseDocument<SessionDocument>(sessionRow.content)
-      : undefined;
-    if (
-      !sessionRow ||
-      !session ||
-      Date.parse(session.expiresAt) <= Date.now()
-    ) {
-      if (sessionRow) {
-        await this.db
-          .delete(ruleDocuments)
-          .where(eq(ruleDocuments.id, sessionRow.id));
+    if (this.useLocalStore) {
+      return this.authenticateTokenLocally(token);
+    }
+
+    try {
+      const tokenHash: string = this.hashToken(token);
+      const sessionRows: Array<typeof ruleDocuments.$inferSelect> = await this.db
+        .select()
+        .from(ruleDocuments)
+        .where(
+          and(
+            eq(ruleDocuments.sourceType, SESSION_SOURCE_TYPE),
+            eq(ruleDocuments.title, tokenHash),
+            eq(ruleDocuments.status, 'active'),
+          ),
+        )
+        .limit(1);
+      const sessionRow: typeof ruleDocuments.$inferSelect | undefined =
+        sessionRows[0];
+      const session: SessionDocument | undefined = sessionRow
+        ? this.parseDocument<SessionDocument>(sessionRow.content)
+        : undefined;
+      if (
+        !sessionRow ||
+        !session ||
+        Date.parse(session.expiresAt) <= Date.now()
+      ) {
+        if (sessionRow) {
+          await this.db
+            .delete(ruleDocuments)
+            .where(eq(ruleDocuments.id, sessionRow.id));
+        }
+        return undefined;
       }
-      return undefined;
-    }
 
-    const accountRows: Array<typeof ruleDocuments.$inferSelect> = await this.db
-      .select()
-      .from(ruleDocuments)
-      .where(
-        and(
-          eq(ruleDocuments.id, session.accountId),
-          eq(ruleDocuments.sourceType, ACCOUNT_SOURCE_TYPE),
-          eq(ruleDocuments.status, 'active'),
-        ),
-      )
-      .limit(1);
-    const accountRow: typeof ruleDocuments.$inferSelect | undefined =
-      accountRows[0];
-    const account: AccountDocument | undefined = accountRow
-      ? this.parseDocument<AccountDocument>(accountRow.content)
-      : undefined;
-    if (!accountRow || !account?.active) {
-      return undefined;
-    }
+      const accountRows: Array<typeof ruleDocuments.$inferSelect> = await this.db
+        .select()
+        .from(ruleDocuments)
+        .where(
+          and(
+            eq(ruleDocuments.id, session.accountId),
+            eq(ruleDocuments.sourceType, ACCOUNT_SOURCE_TYPE),
+            eq(ruleDocuments.status, 'active'),
+          ),
+        )
+        .limit(1);
+      const accountRow: typeof ruleDocuments.$inferSelect | undefined =
+        accountRows[0];
+      const account: AccountDocument | undefined = accountRow
+        ? this.parseDocument<AccountDocument>(accountRow.content)
+        : undefined;
+      if (!accountRow || !account?.active) {
+        return undefined;
+      }
 
-    return this.toInternalUser(account, accountRow.id);
+      return this.toInternalUser(account, accountRow.id);
+    } catch (error: unknown) {
+      if (!this.activateLocalStore(error)) {
+        throw error;
+      }
+      return this.authenticateTokenLocally(token);
+    }
   }
 
   async logout(token?: string): Promise<void> {
     if (!token) {
       return;
     }
-    await this.db
-      .delete(ruleDocuments)
-      .where(
-        and(
-          eq(ruleDocuments.sourceType, SESSION_SOURCE_TYPE),
-          eq(ruleDocuments.title, this.hashToken(token)),
-        ),
-      );
+    const tokenHash: string = this.hashToken(token);
+    if (this.useLocalStore) {
+      await this.standaloneStore.deleteSessionsByTokenHash(tokenHash);
+      return;
+    }
+    try {
+      await this.db
+        .delete(ruleDocuments)
+        .where(
+          and(
+            eq(ruleDocuments.sourceType, SESSION_SOURCE_TYPE),
+            eq(ruleDocuments.title, tokenHash),
+          ),
+        );
+    } catch (error: unknown) {
+      if (!this.activateLocalStore(error)) {
+        throw error;
+      }
+      await this.standaloneStore.deleteSessionsByTokenHash(tokenHash);
+    }
   }
 
   async createAccount(
@@ -203,11 +251,22 @@ export class AuthService {
         '只有管理员可以查看账号',
       );
     }
-    const rows: Array<typeof ruleDocuments.$inferSelect> = await this.db
-      .select()
-      .from(ruleDocuments)
-      .where(eq(ruleDocuments.sourceType, ACCOUNT_SOURCE_TYPE))
-      .orderBy(desc(ruleDocuments.createdAt));
+    if (this.useLocalStore) {
+      return this.listAccountsLocally();
+    }
+    let rows: Array<typeof ruleDocuments.$inferSelect>;
+    try {
+      rows = await this.db
+        .select()
+        .from(ruleDocuments)
+        .where(eq(ruleDocuments.sourceType, ACCOUNT_SOURCE_TYPE))
+        .orderBy(desc(ruleDocuments.createdAt));
+    } catch (error: unknown) {
+      if (!this.activateLocalStore(error)) {
+        throw error;
+      }
+      return this.listAccountsLocally();
+    }
 
     return rows.flatMap((row: typeof ruleDocuments.$inferSelect) => {
       const account: AccountDocument | undefined =
@@ -222,11 +281,17 @@ export class AuthService {
     const username: string = this.normalizeUsername(request.username);
     const displayName: string = request.displayName?.trim();
     this.validateAccountInput(username, displayName, request.password);
+    if (this.useLocalStore) {
+      return this.insertAccountLocally({ ...request, username, displayName });
+    }
     if (await this.findAccountRowByUsername(username)) {
       throw new BusinessException(
         ResponseCode.CONFLICT,
         '这个登录账号已经被使用',
       );
+    }
+    if (this.useLocalStore) {
+      return this.insertAccountLocally({ ...request, username, displayName });
     }
 
     const id: string = randomUUID();
@@ -257,29 +322,50 @@ export class AuthService {
   private async findAccountRowByUsername(
     username: string,
   ): Promise<typeof ruleDocuments.$inferSelect | undefined> {
-    const rows: Array<typeof ruleDocuments.$inferSelect> = await this.db
-      .select()
-      .from(ruleDocuments)
-      .where(
-        and(
-          eq(ruleDocuments.sourceType, ACCOUNT_SOURCE_TYPE),
-          eq(ruleDocuments.title, username),
-        ),
-      )
-      .limit(1);
-    return rows[0];
+    try {
+      const rows: Array<typeof ruleDocuments.$inferSelect> = await this.db
+        .select()
+        .from(ruleDocuments)
+        .where(
+          and(
+            eq(ruleDocuments.sourceType, ACCOUNT_SOURCE_TYPE),
+            eq(ruleDocuments.title, username),
+          ),
+        )
+        .limit(1);
+      return rows[0];
+    } catch (error: unknown) {
+      if (!this.activateLocalStore(error)) {
+        throw error;
+      }
+      return undefined;
+    }
   }
 
   private async createSession(
     user: InternalUser,
   ): Promise<AuthenticatedAccount> {
+    const sessionUser: InternalUser = {
+      id: user.id,
+      username: user.username,
+      displayName: user.displayName,
+      role: user.role,
+    };
     const id: string = randomUUID();
     const token: string = randomBytes(32).toString('hex');
     const tokenHash: string = this.hashToken(token);
     const session: SessionDocument = {
-      accountId: user.id,
+      accountId: sessionUser.id,
       expiresAt: new Date(Date.now() + AUTH_SESSION_TTL_MS).toISOString(),
     };
+    if (this.useLocalStore) {
+      await this.standaloneStore.createSession(
+        tokenHash,
+        session.accountId,
+        session.expiresAt,
+      );
+      return { user: sessionUser, token };
+    }
     await this.db.insert(ruleDocuments).values({
       id,
       title: tokenHash,
@@ -289,7 +375,92 @@ export class AuthService {
       content: JSON.stringify(session),
       status: 'active',
     });
-    return { user, token };
+    return { user: sessionUser, token };
+  }
+
+  private async loginLocally(
+    username: string,
+    password: string,
+  ): Promise<AuthenticatedAccount> {
+    const account: StandaloneAccountRecord | undefined =
+      await this.standaloneStore.findAccountByUsername(username);
+    const passwordMatches: boolean = account
+      ? await this.verifyPassword(
+          password,
+          account.passwordSalt,
+          account.passwordHash,
+        )
+      : false;
+    if (!account || !account.active || !passwordMatches) {
+      throw new BusinessException(
+        ResponseCode.UNAUTHORIZED,
+        '账号或密码不正确',
+      );
+    }
+    return this.createSession(this.toLocalInternalUser(account));
+  }
+
+  private async authenticateTokenLocally(
+    token: string,
+  ): Promise<InternalUser | undefined> {
+    const session: StandaloneSessionRecord | undefined =
+      await this.standaloneStore.findSessionByTokenHash(this.hashToken(token));
+    if (!session || Date.parse(session.expiresAt) <= Date.now()) {
+      if (session) {
+        await this.standaloneStore.deleteSession(session.id);
+      }
+      return undefined;
+    }
+    const account: StandaloneAccountRecord | undefined =
+      await this.standaloneStore.findAccountById(session.accountId);
+    return account?.active ? this.toLocalInternalUser(account) : undefined;
+  }
+
+  private async insertAccountLocally(
+    request: CreateInternalAccountRequest,
+  ): Promise<InternalAccountSummary> {
+    if (await this.standaloneStore.findAccountByUsername(request.username)) {
+      throw new BusinessException(
+        ResponseCode.CONFLICT,
+        '这个登录账号已经被使用',
+      );
+    }
+    const passwordSalt: string = randomBytes(16).toString('hex');
+    const account: StandaloneAccountRecord =
+      await this.standaloneStore.insertAccount({
+        username: request.username,
+        displayName: request.displayName.trim(),
+        passwordSalt,
+        passwordHash: await this.hashPassword(
+          request.password,
+          passwordSalt,
+        ),
+        role: request.role === 'admin' ? 'admin' : 'anchor',
+        active: true,
+      });
+    return this.toLocalAccountSummary(account);
+  }
+
+  private async listAccountsLocally(): Promise<InternalAccountSummary[]> {
+    return (await this.standaloneStore.listAccounts()).map(
+      (account: StandaloneAccountRecord): InternalAccountSummary =>
+        this.toLocalAccountSummary(account),
+    );
+  }
+
+  private activateLocalStore(error: unknown): boolean {
+    if (!this.standaloneStore.isEnabled()) {
+      return false;
+    }
+    if (!this.useLocalStore) {
+      this.logger.warn(
+        `PostgreSQL 当前不可用，本地独立模式已切换到持久化存储：${
+          error instanceof Error ? error.name : 'database_error'
+        }`,
+      );
+    }
+    this.useLocalStore = true;
+    return true;
   }
 
   private validateAccountInput(
@@ -366,6 +537,25 @@ export class AuthService {
       username: account.username,
       displayName: account.displayName,
       role: account.role === 'admin' ? 'admin' : 'anchor',
+    };
+  }
+
+  private toLocalInternalUser(account: StandaloneAccountRecord): InternalUser {
+    return {
+      id: account.id,
+      username: account.username,
+      displayName: account.displayName,
+      role: account.role === 'admin' ? 'admin' : 'anchor',
+    };
+  }
+
+  private toLocalAccountSummary(
+    account: StandaloneAccountRecord,
+  ): InternalAccountSummary {
+    return {
+      ...this.toLocalInternalUser(account),
+      active: account.active,
+      createdAt: account.createdAt,
     };
   }
 

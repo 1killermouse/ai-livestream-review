@@ -29,15 +29,13 @@
 
 ## 快速体验
 
-只体验产品界面和完整示例时，不需要配置 ASR、Embedding、DeepSeek 或 OSS 密钥，但需要一个 PostgreSQL 数据库保存内部账号和历史复盘：
+只体验产品界面和完整示例时，不需要配置数据库、ASR、Embedding、DeepSeek 或 OSS 密钥。独立模式会把账号和历史报告保存在本机 `.local/standalone-data.json`：
 
 ```bash
 git clone https://github.com/1killermouse/ai-livestream-review.git
 cd ai-livestream-review
 npm ci --ignore-scripts
 cp .env.example .env.local
-# 在 .env.local 填写 SUDA_DATABASE_URL 后初始化最小数据表
-psql '你的 PostgreSQL 连接地址' -f server/database/migrations/002_standalone_auth_history.sql
 npm run dev:standalone
 ```
 
@@ -153,18 +151,19 @@ flowchart LR
 3. **语义证据判断阶段**：确认主播是在讲干货、课程权益、案例，还是成交承接。
 4. **短录屏不强判缺失**：尚未进入 60 分钟、84 分钟或 90 分钟窗口时，返回“暂不判断”。
 
-### 为什么没有堆很多 Agent
+### 为什么只在高价值节点使用 Agent
 
-主报告分析在 LangGraph 中保留四个职责清晰的节点，但并不是四个节点都调用大模型：
+主报告分析在 LangGraph 中保留五个职责清晰的节点，节奏诊断和整改话术使用受控 ReAct，其余节点保持确定性：
 
-| 节点           | 职责                                           | 主要实现            |
-| -------------- | ---------------------------------------------- | ------------------- |
-| 转写整理 Agent | 清洗 ASR 结果，保留时间戳、字数和阶段标签      | 确定性代码          |
-| 框架检索 Agent | 对齐直播框架并召回风险规则、案例边界和改写依据 | RAG + 规则          |
-| 风险判断 Agent | 合并违禁词规则与上下文语义风险                 | 本地规则 + DeepSeek |
-| 整改建议 Agent | 输出风险原因、修改动作和主播可直接说的话术     | 结构化工作流        |
+| 节点 | 职责 | 主要实现 |
+| --- | --- | --- |
+| 转写整理 Agent | 清洗 ASR 结果，保留时间戳、字数和阶段标签 | 确定性代码 |
+| 框架检索 Agent | 对齐直播框架并召回风险规则、案例边界和改写依据 | RAG + 规则 |
+| 节奏诊断 Agent | 自主检查时间窗、阶段证据与知识依据，提交实际时段和节奏结论 | ReAct + 结构化校验 |
+| 风险判断 Agent | 合并违禁词规则与上下文语义风险 | 本地规则 + DeepSeek |
+| 整改话术 Agent | 读取风险、节奏、原话和 RAG 依据，生成逐句替换与整段可播改稿 | ReAct + 结构化校验 |
 
-报告追问单独使用一个 ReAct Agent，按问题自主选择报告总览、逐字稿检索、风险查询、框架查询、改写建议和 RAG 知识检索工具，最后通过结构化提交工具绑定证据。这样把自主 Agent 用在适合动态决策的问答环节，同时保持主分析链稳定。
+三个 ReAct Agent 都有明确边界：节奏和整改位于主 LangGraph，报告追问独立运行。它们只能调用指定工具、必须提交结构化结果、必须引用已读取的报告证据，失败后回到时间戳规则、本地改稿或本地报告答案，不允许多个 Agent 自由对话。
 
 ### 为什么示例报告不调用外部模型
 
@@ -179,12 +178,16 @@ flowchart TD
   K1[直播框架] --> C
   K2[风险规则] --> C
   K3[案例边界] --> C
-  C --> D[风险判断 Agent]
-  R[确定性违禁词规则] --> D
-  L[DeepSeek 语义判断] --> D
-  D --> E[整改建议 Agent]
-  E --> F[结构化复盘报告]
-  F --> G[ReAct 报告追问 Agent]
+  C --> D[节奏诊断 ReAct Agent]
+  D --> D1[结构化节奏校验]
+  D1 --> E[风险判断 Agent]
+  R[确定性违禁词规则] --> E
+  L[DeepSeek 语义判断] --> E
+  E --> F[整改话术 ReAct Agent]
+  D1 --> F
+  F --> F1[结构化改稿校验]
+  F1 --> J[结构化复盘报告]
+  J --> G[ReAct 报告追问 Agent]
   G --> T1[逐字稿检索]
   G --> T2[风险与框架查询]
   G --> T3[改写建议与 RAG]
@@ -194,8 +197,16 @@ flowchart TD
   G --> V[Evidence Validator]
   V --> U[已校验答案与时间点]
   V -. 校验失败 .-> B1[本地报告答案]
-  F --> H[飞书同步]
+  J --> H[飞书同步]
 ```
+
+### 节奏与整改 ReAct 策略
+
+1. 节奏 Agent 先查看框架阶段和 5 分钟时间窗，再按需要检索具体逐字稿和 RAG 依据。
+2. 节奏结果必须提交阶段名、状态、节奏问题、证据逐字稿 ID、建议和置信度；实际开始与结束时间由服务端根据证据 ID 重新计算。
+3. 整改 Agent 必须读取风险点和节奏结果，再按需要查看风险点前后语境及 RAG 改写依据。
+4. 整改结果同时包含逐条替换话术和整段可播改稿；新增收益保证、伪造证据或引用不存在的阶段会被拒绝。
+5. 任一 ReAct 调用、提交或校验失败时，分别回退到时间戳规则和本地改稿，整份报告仍可生成。
 
 ### ReAct 追问策略
 
@@ -224,7 +235,7 @@ flowchart TD
 - `risk_rule`：收益承诺、案例夸大、AI 工具能力夸大、过度逼单和站外交易等规则。
 - `case_sample`：宝妈副业、实体店转型自媒体等案例边界。
 
-共享协议已预留 `rewrite_template` 类型，当前替换话术来自确定性风险规则和 DeepSeek 结构化结果，尚未把改写模板作为独立 RAG 文档入库。
+共享协议已预留 `rewrite_template` 类型。整改 Agent 当前使用风险规则、框架和案例边界作为改写依据；尚未把改写模板整理成独立、可维护的 RAG 文档库。
 
 检索流程：
 
@@ -318,13 +329,14 @@ npm run setup:local
 | `ALIYUN_EMBEDDING_MODEL`       | 可选         | 默认 `text-embedding-v4`           |
 | `ALIYUN_EMBEDDING_DIMENSIONS`  | 可选         | 默认 1024                          |
 | `DEEPSEEK_API_KEY`             | 建议         | 上下文语义风险与报告追问           |
-| `DEEPSEEK_MODEL`               | 可选         | DeepSeek 模型名                    |
+| `DEEPSEEK_MODEL`               | 可选         | 默认 `deepseek-v4-flash`           |
 | `DOUYIN_LIVE_RECORDER_PATH`    | 链接录制必需 | 外部录制工具目录                   |
 | `DOUYIN_LIVE_RECORDER_PYTHON`  | 链接录制必需 | 录制工具 Python 路径               |
 | `FEISHU_APP_ID`                | 飞书同步必需 | 飞书应用 ID                        |
 | `FEISHU_APP_SECRET`            | 飞书同步必需 | 飞书应用密钥                       |
 | `FEISHU_DOC_FOLDER_TOKEN`      | 可选         | 指定飞书文档目录                   |
-| `SUDA_DATABASE_URL`            | 必需         | PostgreSQL 连接地址                |
+| `SUDA_DATABASE_URL`            | 部署建议     | PostgreSQL 连接地址                |
+| `STANDALONE_STORE_PATH`        | 可选         | 本地账号与历史数据文件路径         |
 | `LOG_REQUEST_BODY`             | 可选         | 默认 `false`，避免日志记录业务内容 |
 | `LOG_RESPONSE_BODY`            | 可选         | 默认 `false`，避免日志记录报告全文 |
 

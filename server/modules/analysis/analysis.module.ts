@@ -11,6 +11,8 @@ import { LiveScriptPolicyProvider } from './live-script-policy.provider';
 import { RagKnowledgeProvider } from './rag-knowledge.provider';
 import { ReportAnswerEvidenceValidator } from './report-answer-evidence.validator';
 import { ReportReactAgentService } from './report-react-agent.service';
+import { RewriteAdviceAgentService } from './rewrite-advice-agent.service';
+import { RhythmAnalysisAgentService } from './rhythm-analysis-agent.service';
 
 @Module({
   imports: [HistoryModule],
@@ -24,6 +26,8 @@ import { ReportReactAgentService } from './report-react-agent.service';
     RagKnowledgeProvider,
     ReportAnswerEvidenceValidator,
     ReportReactAgentService,
+    RhythmAnalysisAgentService,
+    RewriteAdviceAgentService,
   ],
 })
 export class AnalysisModule {}

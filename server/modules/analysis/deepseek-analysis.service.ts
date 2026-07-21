@@ -34,6 +34,10 @@ interface DeepSeekAnalysisJson {
   findings?: DeepSeekFinding[];
 }
 
+const MAX_TRANSCRIPT_BATCH_CHARS = 12000;
+const SAFE_REPLACEMENT_SCRIPT =
+  '课程会提供方法和练习路径，实际结果会受个人基础、投入时间和执行情况影响。';
+
 @Injectable()
 export class DeepSeekAnalysisService {
   isConfigured(): boolean {
@@ -75,44 +79,51 @@ export class DeepSeekAnalysisService {
       return [];
     }
 
-    const response: AxiosResponse<DeepSeekChatResponse> =
-      await axios.post<DeepSeekChatResponse>(
-        `${this.getBaseUrl()}/chat/completions`,
-        {
-          model: this.getModelName(),
-          messages: [
-            {
-              role: 'system',
-              content:
-                '你是一个AI知识付费直播话术合规与转化诊断专家。你只输出JSON，不输出Markdown。你需要识别收益承诺、AI工具能力夸大、虚假案例、焦虑成交、过度逼单、站外导流，以及话术框架缺口。',
-            },
-            {
-              role: 'user',
-              content: this.buildPrompt(options),
-            },
-          ],
-          thinking: { type: 'disabled' },
-          response_format: { type: 'json_object' },
-          max_tokens: 2000,
-          temperature: 0.2,
-          stream: false,
-        },
-        {
-          headers: {
-            Authorization: `Bearer ${process.env.DEEPSEEK_API_KEY}`,
-            'Content-Type': 'application/json',
+    const batches: TranscriptSegmentSummary[][] = this.buildTranscriptBatches(
+      options.transcriptSegments,
+    );
+    const findings: ScriptFinding[] = [];
+    for (const [batchIndex, transcriptSegments] of batches.entries()) {
+      const response: AxiosResponse<DeepSeekChatResponse> =
+        await axios.post<DeepSeekChatResponse>(
+          `${this.getBaseUrl()}/chat/completions`,
+          {
+            model: this.getModelName(),
+            messages: [
+              {
+                role: 'system',
+                content:
+                  '你是一个AI知识付费直播话术合规诊断专家。你只输出JSON，不输出Markdown。你专注识别收益承诺、AI工具能力夸大、虚假案例、焦虑成交、过度逼单和站外导流；节奏与框架缺口由独立节奏Agent负责。必须区分主播自己的承诺与引用、否定、提醒语境。',
+              },
+              {
+                role: 'user',
+                content: this.buildPrompt({ ...options, transcriptSegments }),
+              },
+            ],
+            thinking: { type: 'disabled' },
+            response_format: { type: 'json_object' },
+            max_tokens: 2000,
+            temperature: 0.2,
+            stream: false,
           },
-          timeout: 45000,
-        },
-      );
+          {
+            headers: {
+              Authorization: `Bearer ${process.env.DEEPSEEK_API_KEY}`,
+              'Content-Type': 'application/json',
+            },
+            timeout: 45000,
+          },
+        );
 
-    const content: string | undefined =
-      response.data.choices?.[0]?.message?.content;
-    if (!content) {
-      return [];
+      const content: string | undefined =
+        response.data.choices?.[0]?.message?.content;
+      if (content) {
+        findings.push(
+          ...this.parseFindings(content, transcriptSegments, batchIndex * 10),
+        );
+      }
     }
-
-    return this.parseFindings(content);
+    return this.uniqueFindings(findings).slice(0, 24);
   }
 
   async answerReportQuestion(options: {
@@ -175,7 +186,7 @@ export class DeepSeekAnalysisService {
     return JSON.stringify(
       {
         instruction:
-          '请根据transcriptSegments、frameworkMatches、ragReferences判断违禁词、语义风险和话术框架缺口。必须返回json对象：{"findings":[{"type":"banned_word|semantic_risk|framework_gap","riskLevel":"high|medium|low|critical","startSeconds":数字,"originalText":"原话或缺口描述","matchedRule":"规则名或框架环节","analysis":"为什么风险","suggestion":"怎么改","replacementScript":"主播可直接替换的话术"}]}。最多返回6条，低置信度不要返回。',
+          '请根据transcriptSegments、frameworkMatches、ragReferences判断违禁词和上下文语义风险，不要重复判断节奏缺口。必须返回json对象：{"findings":[{"type":"banned_word|semantic_risk","riskLevel":"high|medium|low|critical","startSeconds":数字,"originalText":"原话","matchedRule":"风险规则","analysis":"为什么风险","suggestion":"整改方向","replacementScript":"规则兜底替换话术"}]}。最多返回6条，低置信度不要返回；引用、否定、提醒风险说法的语境不得当成主播自己的承诺。',
         frameworkName: options.frameworkName,
         customFramework: options.customFramework,
         transcriptSegments: options.transcriptSegments,
@@ -250,30 +261,41 @@ export class DeepSeekAnalysisService {
     return context;
   }
 
-  private parseFindings(content: string): ScriptFinding[] {
+  private parseFindings(
+    content: string,
+    transcriptSegments: TranscriptSegmentSummary[],
+    idOffset: number,
+  ): ScriptFinding[] {
     try {
       const parsed: DeepSeekAnalysisJson = JSON.parse(content);
       return (parsed.findings || [])
-        .filter((finding: DeepSeekFinding): boolean =>
-          Boolean(finding.originalText?.trim() && finding.matchedRule?.trim()),
+        .map((finding: DeepSeekFinding) => ({
+          finding,
+          segment: this.resolveEvidenceSegment(finding, transcriptSegments),
+        }))
+        .filter(
+          (
+            item,
+          ): item is {
+            finding: DeepSeekFinding;
+            segment: TranscriptSegmentSummary;
+          } => Boolean(item.segment && item.finding.matchedRule?.trim()),
         )
         .slice(0, 6)
         .map(
-          (finding: DeepSeekFinding, index: number): ScriptFinding => ({
-            id: `deepseek-finding-${index + 1}`,
+          ({ finding, segment }, index: number): ScriptFinding => ({
+            id: `deepseek-finding-${idOffset + index + 1}`,
             type: this.normalizeFindingType(finding.type),
             riskLevel: this.normalizeRiskLevel(finding.riskLevel),
-            startSeconds: Math.max(0, Math.floor(finding.startSeconds || 0)),
-            originalText: finding.originalText?.trim() || '',
+            startSeconds: segment.startSeconds,
+            originalText: this.resolveOriginalText(finding, segment),
             matchedRule: `DeepSeek 语义判断：${finding.matchedRule?.trim() || '语义风险'}`,
             analysis:
               finding.analysis?.trim() || 'DeepSeek 判断该表达存在潜在风险。',
             suggestion:
               finding.suggestion?.trim() ||
               '建议改成条件型、边界清晰、不过度承诺的表达。',
-            replacementScript:
-              finding.replacementScript?.trim() ||
-              '课程会提供方法和练习路径，实际结果会受个人基础、投入时间和执行情况影响。',
+            replacementScript: SAFE_REPLACEMENT_SCRIPT,
           }),
         );
     } catch {
@@ -281,12 +303,93 @@ export class DeepSeekAnalysisService {
     }
   }
 
+  private buildTranscriptBatches(
+    transcriptSegments: TranscriptSegmentSummary[],
+  ): TranscriptSegmentSummary[][] {
+    const batches: TranscriptSegmentSummary[][] = [];
+    let currentBatch: TranscriptSegmentSummary[] = [];
+    let currentChars: number = 0;
+
+    for (const segment of transcriptSegments) {
+      const segmentChars: number = segment.text.length + 160;
+      if (
+        currentBatch.length > 0 &&
+        currentChars + segmentChars > MAX_TRANSCRIPT_BATCH_CHARS
+      ) {
+        batches.push(currentBatch);
+        currentBatch = [];
+        currentChars = 0;
+      }
+      currentBatch.push(segment);
+      currentChars += segmentChars;
+    }
+    if (currentBatch.length > 0) {
+      batches.push(currentBatch);
+    }
+    return batches;
+  }
+
+  private resolveEvidenceSegment(
+    finding: DeepSeekFinding,
+    transcriptSegments: TranscriptSegmentSummary[],
+  ): TranscriptSegmentSummary | undefined {
+    const originalText: string = this.normalizeEvidenceText(
+      finding.originalText || '',
+    );
+    if (originalText.length < 2) {
+      return undefined;
+    }
+    const proposedStart: number = Math.max(
+      0,
+      Math.floor(finding.startSeconds || 0),
+    );
+    const orderedSegments: TranscriptSegmentSummary[] = [
+      ...transcriptSegments.filter(
+        (segment: TranscriptSegmentSummary): boolean =>
+          proposedStart >= segment.startSeconds - 2 &&
+          proposedStart <= segment.endSeconds + 2,
+      ),
+      ...transcriptSegments,
+    ];
+    return orderedSegments.find((segment: TranscriptSegmentSummary): boolean =>
+      this.normalizeEvidenceText(segment.text).includes(originalText),
+    );
+  }
+
+  private resolveOriginalText(
+    finding: DeepSeekFinding,
+    segment: TranscriptSegmentSummary,
+  ): string {
+    const proposedOriginal: string = finding.originalText?.trim() || '';
+    return segment.text.includes(proposedOriginal)
+      ? proposedOriginal
+      : segment.text.trim();
+  }
+
+  private uniqueFindings(findings: ScriptFinding[]): ScriptFinding[] {
+    const seen: Set<string> = new Set<string>();
+    return findings.filter((finding: ScriptFinding): boolean => {
+      const key: string = `${finding.startSeconds}:${this.normalizeEvidenceText(
+        finding.originalText,
+      )}`;
+      if (seen.has(key)) {
+        return false;
+      }
+      seen.add(key);
+      return true;
+    });
+  }
+
+  private normalizeEvidenceText(text: string): string {
+    return text
+      .toLowerCase()
+      .replace(/[\s，。！？、,.!?：:；;“”"'（）()]/g, '');
+  }
+
   private normalizeFindingType(
     type: DeepSeekFinding['type'],
   ): ScriptFinding['type'] {
-    return type === 'banned_word' ||
-      type === 'semantic_risk' ||
-      type === 'framework_gap'
+    return type === 'banned_word' || type === 'semantic_risk'
       ? type
       : 'semantic_risk';
   }
