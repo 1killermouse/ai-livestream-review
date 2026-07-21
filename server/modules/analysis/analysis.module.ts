@@ -10,6 +10,7 @@ import { DeepSeekAnalysisService } from './deepseek-analysis.service';
 import { LiveScriptPolicyProvider } from './live-script-policy.provider';
 import { RagKnowledgeProvider } from './rag-knowledge.provider';
 import { ReportAnswerEvidenceValidator } from './report-answer-evidence.validator';
+import { ReportQuestionIntentRouter } from './report-question-intent.router';
 import { ReportReactAgentService } from './report-react-agent.service';
 import { RewriteAdviceAgentService } from './rewrite-advice-agent.service';
 import { RhythmAnalysisAgentService } from './rhythm-analysis-agent.service';
@@ -25,6 +26,7 @@ import { RhythmAnalysisAgentService } from './rhythm-analysis-agent.service';
     LiveScriptPolicyProvider,
     RagKnowledgeProvider,
     ReportAnswerEvidenceValidator,
+    ReportQuestionIntentRouter,
     ReportReactAgentService,
     RhythmAnalysisAgentService,
     RewriteAdviceAgentService,

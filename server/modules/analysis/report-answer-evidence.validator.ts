@@ -8,6 +8,8 @@ import type {
   TranscriptSegmentSummary,
 } from '@shared/api.interface';
 
+import type { ReportQuestionIntent } from './report-question-intent.router';
+
 export interface SubmittedReportAnswer {
   answer: string;
   segmentIds: string[];
@@ -46,6 +48,7 @@ export class ReportAnswerEvidenceValidator {
   validate(options: {
     report: PrototypeAnalysisReport;
     question: string;
+    intent?: ReportQuestionIntent;
     submission: SubmittedReportAnswer;
     observed: ObservedReportEvidence;
   }): EvidenceValidationResult {
@@ -125,17 +128,31 @@ export class ReportAnswerEvidenceValidator {
       reasons.push('答案没有引用本场报告依据');
     }
 
-    const asksForDetailedEvidence: boolean =
-      /原话|哪句|时间|几分钟|风险|违规|违禁|承诺|夸大|赚钱|逼单|怎么改|改写|重写|替换/.test(
-        options.question,
-      );
+    const asksForDetailedEvidence: boolean = options.intent
+      ? ['risk_locate', 'risk_explain', 'rewrite'].includes(options.intent)
+      : /原话|哪句|时间|几分钟|风险|违规|违禁|承诺|夸大|赚钱|逼单|怎么改|改写|重写|替换/.test(
+          options.question,
+        );
     if (asksForDetailedEvidence && !hasDetailedEvidence) {
       reasons.push('具体问题缺少原话或风险项依据');
     }
 
-    const asksForFramework: boolean =
-      /节奏|框架|环节|干货|课程承接|成交环节/.test(options.question);
-    if (asksForFramework && frameworks.length === 0 && !hasDetailedEvidence) {
+    if (
+      options.intent &&
+      ['risk_locate', 'risk_explain', 'rewrite'].includes(options.intent) &&
+      findings.length === 0
+    ) {
+      reasons.push('当前意图缺少经过查证的风险项依据');
+    }
+
+    const asksForFramework: boolean = options.intent
+      ? options.intent === 'rhythm'
+      : /节奏|框架|环节|干货|课程承接|成交环节/.test(options.question);
+    if (
+      asksForFramework &&
+      frameworks.length === 0 &&
+      (options.intent === 'rhythm' || !hasDetailedEvidence)
+    ) {
       reasons.push('节奏问题缺少框架阶段依据');
     }
 

@@ -23,6 +23,11 @@ import {
   type ObservedReportEvidence,
   type SubmittedReportAnswer,
 } from './report-answer-evidence.validator';
+import {
+  ReportQuestionIntentRouter,
+  type ReportQuestionIntent,
+  type ReportQuestionIntentResult,
+} from './report-question-intent.router';
 
 interface ReportReactAgentOptions {
   report: PrototypeAnalysisReport;
@@ -54,12 +59,17 @@ export class ReportReactAgentService {
   constructor(
     private readonly deepSeekAnalysisService: DeepSeekAnalysisService,
     private readonly ragKnowledgeProvider: RagKnowledgeProvider,
+    private readonly intentRouter: ReportQuestionIntentRouter,
     private readonly evidenceValidator: ReportAnswerEvidenceValidator,
   ) {}
 
   async answer(options: ReportReactAgentOptions): Promise<ReportChatResponse> {
+    const intentResult: ReportQuestionIntentResult = this.intentRouter.classify(
+      options.question,
+      options.messages,
+    );
     if (!this.deepSeekAnalysisService.isConfigured()) {
-      return this.answerLocally(options, 'model_not_configured');
+      return this.answerLocally(options, 'model_not_configured', intentResult);
     }
 
     const evidenceContext: ReportToolEvidenceContext = {
@@ -81,7 +91,7 @@ export class ReportReactAgentService {
       tools,
       name: 'livestream_report_react_agent',
       version: 'v2',
-      prompt: this.buildSystemPrompt(options.report),
+      prompt: this.buildSystemPrompt(options.report, intentResult),
     });
 
     try {
@@ -99,12 +109,13 @@ export class ReportReactAgentService {
       );
       if (!submissionRef.value) {
         this.logger.warn('ReAct 未通过 submit_report_answer 提交答案');
-        return this.answerLocally(options, 'submission_missing');
+        return this.answerLocally(options, 'submission_missing', intentResult);
       }
 
       const validation = this.evidenceValidator.validate({
         report: options.report,
         question: options.question,
+        intent: intentResult.intent,
         submission: submissionRef.value,
         observed: evidenceContext,
       });
@@ -112,7 +123,7 @@ export class ReportReactAgentService {
         this.logger.warn(
           `ReAct 证据校验未通过：${validation.reasons.join('；')}`,
         );
-        return this.answerLocally(options, 'validation_failed');
+        return this.answerLocally(options, 'validation_failed', intentResult);
       }
 
       return {
@@ -130,7 +141,7 @@ export class ReportReactAgentService {
       this.logger.warn(
         `ReAct 调用失败，已改用本地报告答案：${error instanceof Error ? error.message : '未知错误'}`,
       );
-      return this.answerLocally(options, 'agent_failed');
+      return this.answerLocally(options, 'agent_failed', intentResult);
     }
   }
 
@@ -231,10 +242,9 @@ export class ReportReactAgentService {
                 report.transcriptSegments,
                 finding.startSeconds,
               );
-            const warningOrRefutation: boolean =
-              isWarningOrRefutationContext(
-                contextSegment?.text || finding.originalText,
-              );
+            const warningOrRefutation: boolean = isWarningOrRefutationContext(
+              contextSegment?.text || finding.originalText,
+            );
             return {
               findingId: finding.id,
               riskLevel: finding.riskLevel,
@@ -390,11 +400,13 @@ export class ReportReactAgentService {
   private answerLocally(
     options: ReportReactAgentOptions,
     fallbackReason: ReportChatFallbackReason,
+    intentResult: ReportQuestionIntentResult,
   ): ReportChatResponse {
     const localResult: LocalAnswerResult = this.buildLocalAnswer(
       options.report,
       options.question,
       options.fallbackSegments,
+      intentResult,
     );
     return {
       answer: this.sanitizeAnswer(localResult.answer),
@@ -414,8 +426,11 @@ export class ReportReactAgentService {
     report: PrototypeAnalysisReport,
     question: string,
     relatedSegments: TranscriptSegmentSummary[],
+    intentResult: ReportQuestionIntentResult,
   ): LocalAnswerResult {
-    if (/最该.{0,6}改|先改|优先改|哪.{0,6}(?:处|个).{0,4}改/.test(question)) {
+    const intent: ReportQuestionIntent = intentResult.intent;
+    const evidenceQuery: string = intentResult.searchQuery || question;
+    if (intent === 'summary_action') {
       const findings: ScriptFinding[] = this.searchFindings(
         report.findings,
         undefined,
@@ -425,18 +440,13 @@ export class ReportReactAgentService {
       const warningSegments: TranscriptSegmentSummary[] = this.uniqueSegments(
         findings
           .map((finding: ScriptFinding) =>
-            this.findSegmentAt(
-              report.transcriptSegments,
-              finding.startSeconds,
-            ),
+            this.findSegmentAt(report.transcriptSegments, finding.startSeconds),
           )
           .filter(
             (
               segment: TranscriptSegmentSummary | undefined,
             ): segment is TranscriptSegmentSummary =>
-              Boolean(
-                segment && isWarningOrRefutationContext(segment.text),
-              ),
+              Boolean(segment && isWarningOrRefutationContext(segment.text)),
           ),
       );
       if (findings.length > 0 && warningSegments.length > 0) {
@@ -450,15 +460,46 @@ export class ReportReactAgentService {
           citationCount: findings.length + warningSegments.length,
         };
       }
+
+      if (findings.length > 0) {
+        const findingSegments: TranscriptSegmentSummary[] = this.uniqueSegments(
+          findings
+            .map((finding: ScriptFinding) =>
+              this.findSegmentAt(
+                report.transcriptSegments,
+                finding.startSeconds,
+              ),
+            )
+            .filter(
+              (
+                segment: TranscriptSegmentSummary | undefined,
+              ): segment is TranscriptSegmentSummary => Boolean(segment),
+            ),
+        );
+        return {
+          answer: `${report.summary.overallDiagnosis}下一场优先处理：${findings
+            .map(
+              (finding: ScriptFinding, index: number): string =>
+                `${index + 1}. ${this.formatSeconds(finding.startSeconds)} 的“${finding.originalText}”，${finding.suggestion}`,
+            )
+            .join('；')}`,
+          relatedSegments: findingSegments,
+          confidence: findingSegments.length > 0 ? 'high' : 'medium',
+          citationCount: findings.length + findingSegments.length,
+        };
+      }
     }
 
-    if (/怎么改|改写|重写|替换|话术/.test(question)) {
+    if (intent === 'rewrite') {
+      const findingIndex: number = intentResult.referencedItemIndex || 0;
       const finding: ScriptFinding | undefined = this.searchFindings(
         report.findings,
-        question,
+        intentResult.referencedItemIndex === undefined
+          ? evidenceQuery
+          : undefined,
         undefined,
-        1,
-      )[0];
+        findingIndex + 1,
+      )[findingIndex];
       if (finding) {
         const warningAnswer: LocalAnswerResult | undefined =
           this.buildWarningContextAnswer(report, finding, relatedSegments);
@@ -474,10 +515,10 @@ export class ReportReactAgentService {
       }
     }
 
-    if (/违规|风险|违禁|承诺|夸大|赚钱|逼单/.test(question)) {
+    if (intent === 'risk_locate' || intent === 'risk_explain') {
       const finding: ScriptFinding | undefined = this.searchFindings(
         report.findings,
-        question,
+        evidenceQuery,
         undefined,
         1,
       )[0];
@@ -487,19 +528,23 @@ export class ReportReactAgentService {
         if (warningAnswer) {
           return warningAnswer;
         }
+        const answer: string =
+          intent === 'risk_explain'
+            ? `${this.formatSeconds(finding.startSeconds)} 这句“${finding.originalText}”之所以有风险，是因为${finding.analysis}${finding.suggestion}`
+            : `本场最需要先改的是 ${this.formatSeconds(finding.startSeconds)} 的“${finding.originalText}”。${finding.analysis}${finding.suggestion}`;
         return this.buildLocalFindingAnswer(
           report,
           finding,
-          `本场最需要先改的是 ${this.formatSeconds(finding.startSeconds)} 的“${finding.originalText}”。${finding.analysis}${finding.suggestion}`,
+          answer,
           relatedSegments,
         );
       }
     }
 
-    if (/节奏|框架|环节|干货|课程|案例|成交/.test(question)) {
+    if (intent === 'rhythm') {
       const matches: FrameworkMatchSummary[] = this.searchFrameworkMatches(
         report.frameworkMatches,
-        question,
+        evidenceQuery,
       );
       const match: FrameworkMatchSummary | undefined =
         matches.find(
@@ -578,9 +623,26 @@ export class ReportReactAgentService {
     ].slice(0, 8);
   }
 
-  private buildSystemPrompt(report: PrototypeAnalysisReport): string {
+  private buildSystemPrompt(
+    report: PrototypeAnalysisReport,
+    intentResult: ReportQuestionIntentResult,
+  ): string {
+    const intentLabels: Record<ReportQuestionIntent, string> = {
+      risk_locate: '定位风险原话和时间点',
+      risk_explain: '解释风险原因和判断依据',
+      rewrite: '生成可直接使用的整改话术',
+      rhythm: '分析直播阶段和节奏',
+      summary_action: '总结本场并给出行动优先级',
+      unknown: '意图暂不明确',
+    };
     return [
       '你是AI知识付费直播播后复盘顾问，需要用ReAct方式先理解问题、调用工具查证，再给结论。',
+      `意图路由结果：${intentLabels[intentResult.intent]}，置信度：${intentResult.confidence}。`,
+      `当前检索主题：${intentResult.searchQuery.slice(0, 300)}。`,
+      intentResult.referencedItemIndex === undefined
+        ? '用户没有指定列表序号。'
+        : `用户指的是列表中的第 ${intentResult.referencedItemIndex + 1} 条，查询风险或改写建议时要按工具返回顺序定位这一条。`,
+      `建议优先调用：${intentResult.recommendedTools.join('、')}。意图只是查证路线建议，证据不足时可以继续调用其他工具。`,
       '涉及本场的原话、时间点、风险、节奏或改写时，必须调用对应工具，不能凭常识猜测。',
       '只围绕这场报告回答；报告没有依据时，明确说“这场报告里暂时看不到”。',
       '回答用主播听得懂的大白话，优先给直接结论、对应时间点和能直接开播的改法。',

@@ -172,6 +172,30 @@ describe('ReportAnswerEvidenceValidator', () => {
     expect(result.valid).toBe(true);
     expect(result.reasons).toEqual([]);
   });
+
+  it('requires a verified framework stage for a rhythm intent', () => {
+    const result = validator.validate({
+      report: createReport(),
+      question: '这个环节怎么样？',
+      intent: 'rhythm',
+      submission: {
+        answer: '课程承接节奏需要加强。',
+        segmentIds: ['segment-risk'],
+        findingIds: [],
+        frameworkStages: [],
+        confidence: 'high',
+      },
+      observed: {
+        segmentIds: new Set(['segment-risk']),
+        findingIds: new Set(),
+        frameworkStages: new Set(),
+        overviewUsed: false,
+      },
+    });
+
+    expect(result.valid).toBe(false);
+    expect(result.reasons).toContain('节奏问题缺少框架阶段依据');
+  });
 });
 
 function createReport(): PrototypeAnalysisReport {

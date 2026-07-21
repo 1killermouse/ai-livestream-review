@@ -8,6 +8,7 @@ import type {
 import { DeepSeekAnalysisService } from './deepseek-analysis.service';
 import { RagKnowledgeProvider } from './rag-knowledge.provider';
 import { ReportAnswerEvidenceValidator } from './report-answer-evidence.validator';
+import { ReportQuestionIntentRouter } from './report-question-intent.router';
 import { ReportReactAgentService } from './report-react-agent.service';
 
 jest.mock('@langchain/langgraph/prebuilt', () => ({
@@ -66,6 +67,7 @@ describe('ReportReactAgentService', () => {
     const service = new ReportReactAgentService(
       deepSeekAnalysisService,
       ragKnowledgeProvider,
+      new ReportQuestionIntentRouter(),
       new ReportAnswerEvidenceValidator(),
     );
     const report: PrototypeAnalysisReport = createReport();
@@ -114,6 +116,7 @@ describe('ReportReactAgentService', () => {
     const service = new ReportReactAgentService(
       deepSeekAnalysisService,
       {} as RagKnowledgeProvider,
+      new ReportQuestionIntentRouter(),
       new ReportAnswerEvidenceValidator(),
     );
     const report: PrototypeAnalysisReport = createReport();
@@ -140,6 +143,69 @@ describe('ReportReactAgentService', () => {
     expect(deepSeekAnalysisService.answerReportQuestion).not.toHaveBeenCalled();
   });
 
+  it('reuses the previous question topic for a short local follow-up', async () => {
+    const deepSeekAnalysisService = {
+      isConfigured: jest.fn().mockReturnValue(false),
+    } as unknown as DeepSeekAnalysisService;
+    const service = new ReportReactAgentService(
+      deepSeekAnalysisService,
+      {} as RagKnowledgeProvider,
+      new ReportQuestionIntentRouter(),
+      new ReportAnswerEvidenceValidator(),
+    );
+    const report: PrototypeAnalysisReport = createReport();
+
+    const response = await service.answer({
+      report,
+      question: '为什么？',
+      messages: [
+        { role: 'user', content: '哪一句收益承诺风险最大？' },
+        { role: 'assistant', content: '00:12 附近需要优先处理。' },
+      ],
+      fallbackSegments: [],
+    });
+
+    expect(response.answer).toContain('00:12');
+    expect(response.answer).toContain('之所以有风险');
+    expect(response.answer).toContain('把收益说成了确定结果');
+    expect(response.relatedSegments).toEqual([
+      expect.objectContaining({ id: 'segment-risk' }),
+    ]);
+  });
+
+  it('rewrites the requested ordinal risk item in local fallback', async () => {
+    const deepSeekAnalysisService = {
+      isConfigured: jest.fn().mockReturnValue(false),
+    } as unknown as DeepSeekAnalysisService;
+    const service = new ReportReactAgentService(
+      deepSeekAnalysisService,
+      {} as RagKnowledgeProvider,
+      new ReportQuestionIntentRouter(),
+      new ReportAnswerEvidenceValidator(),
+    );
+    const report: PrototypeAnalysisReport = createReport();
+    report.findings.push({
+      ...report.findings[0],
+      id: 'finding-2',
+      originalText: '七天接单回本。',
+      matchedRule: '短周期收益暗示',
+      replacementScript: '课程会拆解接单流程，实际周期因人而异。',
+    });
+
+    const response = await service.answer({
+      report,
+      question: '第二条怎么改？',
+      messages: [
+        { role: 'user', content: '这场最该先改哪三处？' },
+        { role: 'assistant', content: '第一条收益承诺，第二条回本暗示。' },
+      ],
+      fallbackSegments: [],
+    });
+
+    expect(response.answer).toContain('七天接单回本');
+    expect(response.answer).toContain('实际周期因人而异');
+  });
+
   it('keeps warning examples separate from the host own promises in local fallback', async () => {
     const deepSeekAnalysisService = {
       isConfigured: jest.fn().mockReturnValue(false),
@@ -147,6 +213,7 @@ describe('ReportReactAgentService', () => {
     const service = new ReportReactAgentService(
       deepSeekAnalysisService,
       {} as RagKnowledgeProvider,
+      new ReportQuestionIntentRouter(),
       new ReportAnswerEvidenceValidator(),
     );
     const report: PrototypeAnalysisReport = createReport();
@@ -180,6 +247,7 @@ describe('ReportReactAgentService', () => {
     const service = new ReportReactAgentService(
       deepSeekAnalysisService,
       {} as RagKnowledgeProvider,
+      new ReportQuestionIntentRouter(),
       new ReportAnswerEvidenceValidator(),
     );
     const report: PrototypeAnalysisReport = createReport();
@@ -234,6 +302,7 @@ describe('ReportReactAgentService', () => {
     const service = new ReportReactAgentService(
       deepSeekAnalysisService,
       {} as RagKnowledgeProvider,
+      new ReportQuestionIntentRouter(),
       new ReportAnswerEvidenceValidator(),
     );
     const report: PrototypeAnalysisReport = createReport();

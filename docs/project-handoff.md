@@ -127,7 +127,7 @@ flowchart TD
 
 ### 报告追问 ReAct Agent
 
-报告追问使用 LangGraph `createReactAgent`，可自主选择报告总览、逐字稿检索、风险查询、框架查询、改写建议和 RAG 知识检索六个查证工具，再通过第七个结构化提交工具返回答案和证据 ID。Evidence Validator 核对 ID、工具读取记录、原话、时间点以及引用/否定语境；未提交、校验失败或 Agent 异常时直接返回本地报告答案，不放行未校验模型文本。这是一个受控的单 Agent，不是多 Agent 自由协作。
+报告追问先通过轻量意图路由识别风险定位、风险解释、改写、节奏、总结行动和未知六类问题，不额外调用模型。路由结果只调整工具优先级，ReAct 仍可自主选择报告总览、逐字稿检索、风险查询、框架查询、改写建议和 RAG 知识检索六个查证工具，再通过第七个结构化提交工具返回答案和证据 ID。Evidence Validator 按意图核对所需证据、工具读取记录、原话、时间点以及引用/否定语境；本地降级同样复用该意图。未提交、校验失败或 Agent 异常时直接返回本地报告答案，不放行未校验模型文本。
 
 ### RAG 知识类型
 
@@ -184,7 +184,7 @@ flowchart TD
 ### 最近一次验证
 
 - ESLint、Stylelint、前后端 TypeScript 检查通过。
-- Jest：13 个测试套件、33 项测试通过。
+- Jest：14 个测试套件、44 项测试通过。
 - 正式构建通过。
 - 本地首页和登录状态接口返回 `200`。
 - 浏览器验证：首页来源切换、框架设置、示例报告六个视图、历史空状态可正常使用，控制台无错误。
@@ -193,8 +193,7 @@ flowchart TD
 
 - 仓库：`1killermouse/ai-livestream-review`。
 - 当前本地分支：`sprint/default`。
-- 当前本地与远端 `main` 基线均为提交 `20a41d3`。
-- 本地包含尚未提交的节奏/整改 ReAct、本地持久化兜底和配套测试，GitHub 暂时不是本机最新代码。
+- GitHub 默认分支为 `main`；发布前以 `git status` 和远端提交编号再次核对同步状态。
 - 本地运行地址：`http://127.0.0.1:8081/app/`。
 - 启动命令必须在项目目录执行：`npm run dev:standalone`。
 
@@ -413,6 +412,7 @@ Bad Case ID：BC-YYYYMMDD-001
 | `client/src/pages/history/HistoryPage.tsx` | 历史报告列表 |
 | `server/modules/analysis/analysis.service.ts` | ASR 后分析、RAG、LangGraph 和后台任务主逻辑 |
 | `server/modules/analysis/report-react-agent.service.ts` | 报告追问 ReAct Agent、工具与降级策略 |
+| `server/modules/analysis/report-question-intent.router.ts` | 追问意图识别、上下文继承和工具优先级 |
 | `server/modules/analysis/rhythm-analysis-agent.service.ts` | 节奏诊断 ReAct Agent、时间窗工具与证据校验 |
 | `server/modules/analysis/rewrite-advice-agent.service.ts` | 整改话术 ReAct Agent、逐条改写与整段改稿校验 |
 | `server/modules/analysis/report-answer-evidence.validator.ts` | 追问答案的证据 ID、原话与时间点校验 |
